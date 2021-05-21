@@ -1,17 +1,17 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-using System.Collections.Generic;
 using System.Diagnostics;
 using System.Diagnostics.CodeAnalysis;
 using System.Net.Http.QPack;
 
 namespace System.Net.Http
 {
-    public class HttpMethod : IEquatable<HttpMethod>
+    public partial class HttpMethod : IEquatable<HttpMethod>
     {
         private readonly string _method;
-        private readonly byte[]? _http3EncodedBytes;
+        private readonly int? _http3Index;
+
         private int _hashcode;
 
         private static readonly HttpMethod s_getMethod = new HttpMethod("GET", http3StaticTableIndex: H3StaticTable.MethodGet);
@@ -20,8 +20,8 @@ namespace System.Net.Http
         private static readonly HttpMethod s_deleteMethod = new HttpMethod("DELETE", http3StaticTableIndex: H3StaticTable.MethodDelete);
         private static readonly HttpMethod s_headMethod = new HttpMethod("HEAD", http3StaticTableIndex: H3StaticTable.MethodHead);
         private static readonly HttpMethod s_optionsMethod = new HttpMethod("OPTIONS", http3StaticTableIndex: H3StaticTable.MethodOptions);
-        private static readonly HttpMethod s_traceMethod = new HttpMethod("TRACE");
-        private static readonly HttpMethod s_patchMethod = new HttpMethod("PATCH");
+        private static readonly HttpMethod s_traceMethod = new HttpMethod("TRACE", -1);
+        private static readonly HttpMethod s_patchMethod = new HttpMethod("PATCH", -1);
         private static readonly HttpMethod s_connectMethod = new HttpMethod("CONNECT", http3StaticTableIndex: H3StaticTable.MethodConnect);
 
         public static HttpMethod Get
@@ -77,11 +77,6 @@ namespace System.Net.Http
             get { return _method; }
         }
 
-        internal byte[]? Http3EncodedBytes
-        {
-            get { return _http3EncodedBytes; }
-        }
-
         public HttpMethod(string method)
         {
             if (string.IsNullOrEmpty(method))
@@ -96,12 +91,10 @@ namespace System.Net.Http
             _method = method;
         }
 
-        private HttpMethod(string method, int? http3StaticTableIndex)
-            : this(method)
+        private HttpMethod(string method, int http3StaticTableIndex)
         {
-            _http3EncodedBytes = http3StaticTableIndex != null ?
-                QPackEncoder.EncodeStaticIndexedHeaderFieldToArray(http3StaticTableIndex.GetValueOrDefault()) :
-                QPackEncoder.EncodeLiteralHeaderFieldWithStaticNameReferenceToArray(H3StaticTable.MethodGet, method);
+            _method = method;
+            _http3Index = http3StaticTableIndex;
         }
 
         #region IEquatable<HttpMethod> Members
@@ -166,11 +159,11 @@ namespace System.Net.Http
             Debug.Assert(method != null);
             Debug.Assert(!string.IsNullOrEmpty(method._method));
 
-            // _http3EncodedBytes is only set for the singleton instances, so if it's not null,
+            // _http3Index is only set for the singleton instances, so if it's not null,
             // we can avoid the lookup.  Otherwise, look up the method instance and return the
             // normalized instance if it's found.
 
-            if (method._http3EncodedBytes is null && method._method.Length >= 3) // 3 == smallest known method
+            if (method._http3Index is null && method._method.Length >= 3) // 3 == smallest known method
             {
                 HttpMethod? match = (method._method[0] | 0x20) switch
                 {

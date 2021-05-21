@@ -364,8 +364,11 @@ namespace System.Net.Sockets
             }
         }
 
-        internal unsafe SocketError DoOperationDisconnect(Socket socket, SafeSocketHandle handle)
+        internal unsafe SocketError DoOperationDisconnect(Socket socket, SafeSocketHandle handle, CancellationToken cancellationToken)
         {
+            // Note: CancellationToken is ignored for now.
+            // See https://github.com/dotnet/runtime/issues/51452
+
             NativeOverlapped* overlapped = AllocateNativeOverlapped();
             try
             {
@@ -563,7 +566,7 @@ namespace System.Net.Sockets
                     Debug.Assert(_singleBufferHandleState == SingleBufferHandleState.None);
                     _singleBufferHandleState = SingleBufferHandleState.InProcess;
 
-                    _wsaRecvMsgWSABufferArrayPinned[0].Pointer = (IntPtr)bufferPtr;
+                    _wsaRecvMsgWSABufferArrayPinned[0].Pointer = (IntPtr)bufferPtr + _offset;
                     _wsaRecvMsgWSABufferArrayPinned[0].Length = _count;
                     wsaRecvMsgWSABufferArray = _wsaRecvMsgWSABufferArrayPinned;
                     wsaRecvMsgWSABufferCount = 1;
@@ -1188,6 +1191,7 @@ namespace System.Net.Sockets
         private void CompleteCore()
         {
             _strongThisRef.Value = null; // null out this reference from the overlapped so this isn't kept alive artificially
+
             if (_singleBufferHandleState != SingleBufferHandleState.None)
             {
                 // If the state isn't None, then either it's Set, in which case there's state to cleanup,
@@ -1213,6 +1217,8 @@ namespace System.Net.Sockets
                     sw.SpinOnce();
                 }
 
+                Debug.Assert(_singleBufferHandleState == SingleBufferHandleState.Set);
+
                 // Remove any cancellation registration.  First dispose the registration
                 // to ensure that cancellation will either never fine or will have completed
                 // firing before we continue.  Only then can we safely null out the overlapped.
@@ -1223,6 +1229,8 @@ namespace System.Net.Sockets
                 }
 
                 // Release any GC handles.
+                Debug.Assert(_singleBufferHandleState == SingleBufferHandleState.Set);
+
                 if (_singleBufferHandleState == SingleBufferHandleState.Set)
                 {
                     _singleBufferHandleState = SingleBufferHandleState.None;

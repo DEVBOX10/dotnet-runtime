@@ -42,6 +42,7 @@ enum NamedIntrinsic : unsigned short
     NI_System_Math_Tanh,
     NI_SYSTEM_MATH_END,
 
+    NI_System_Collections_Generic_Comparer_get_Default,
     NI_System_Collections_Generic_EqualityComparer_get_Default,
     NI_System_Buffers_Binary_BinaryPrimitives_ReverseEndianness,
     NI_System_Numerics_BitOperations_PopCount,
@@ -51,8 +52,16 @@ enum NamedIntrinsic : unsigned short
     NI_System_Type_get_IsValueType,
     NI_System_Type_IsAssignableFrom,
     NI_System_Type_IsAssignableTo,
+    NI_System_Type_op_Equality,
+    NI_System_Type_op_Inequality,
+    NI_System_Type_GetTypeFromHandle,
     NI_System_Array_Clone,
     NI_System_Object_MemberwiseClone,
+
+    NI_System_String_get_Chars,
+    NI_System_String_get_Length,
+    NI_System_Span_get_Item,
+    NI_System_ReadOnlySpan_get_Item,
 
     // These are used by HWIntrinsics but are defined more generally
     // to allow dead code optimization and handle the recursion case
@@ -61,6 +70,9 @@ enum NamedIntrinsic : unsigned short
     NI_IsSupported_False,
     NI_IsSupported_Dynamic,
     NI_Throw_PlatformNotSupportedException,
+
+    NI_System_Threading_Interlocked_And,
+    NI_System_Threading_Interlocked_Or,
 
 #ifdef FEATURE_HW_INTRINSICS
     NI_HW_INTRINSIC_START,

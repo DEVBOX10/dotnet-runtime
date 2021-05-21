@@ -734,6 +734,7 @@ namespace Microsoft.Extensions.Primitives
         }
 
         [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/50878", TestPlatforms.Android)]
         public void StringSegment_Substring_InvalidOffsetAndLength()
         {
             // Arrange
@@ -745,6 +746,7 @@ namespace Microsoft.Extensions.Primitives
         }
 
         [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/50878", TestPlatforms.Android)]
         public void StringSegment_Substring_OffsetAndLengthOverflows()
         {
             // Arrange
@@ -816,6 +818,7 @@ namespace Microsoft.Extensions.Primitives
         }
 
         [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/50878", TestPlatforms.Android)]
         public void StringSegment_Subsegment_InvalidOffsetAndLength()
         {
             // Arrange
@@ -827,6 +830,7 @@ namespace Microsoft.Extensions.Primitives
         }
 
         [Fact]
+        [ActiveIssue("https://github.com/dotnet/runtime/issues/50878", TestPlatforms.Android)]
         public void StringSegment_Subsegment_OffsetAndLengthOverflows()
         {
             // Arrange
@@ -1268,9 +1272,12 @@ namespace Microsoft.Extensions.Primitives
                     { null, null, StringComparison.InvariantCultureIgnoreCase, 0 },
                     { string.Empty, null, StringComparison.Ordinal, 1 },
                     { string.Empty, null, StringComparison.InvariantCultureIgnoreCase, 1 },
-                    { "x\u00E9y", "xE\u0301y", StringComparison.InvariantCulture, -1 }, // linguistic: lowercase sorts before uppercase
-                    { "x\u00E9y", "xE\u0301y", StringComparison.InvariantCultureIgnoreCase, 0 }, // equal (linguistic, one is normalized)
-                    { "Hello", "HELLO", StringComparison.InvariantCulture, -1 }, // linguistic: lowercase sorts before uppercase
+                    { "x\u00E9y", "xE\u0301y", StringComparison.InvariantCulture, 
+                    PlatformDetection.IsInvariantGlobalization ? 1 : -1 }, // linguistic: lowercase sorts before uppercase
+                    { "x\u00E9y", "xE\u0301y", StringComparison.InvariantCultureIgnoreCase,
+                    PlatformDetection.IsInvariantGlobalization ? 1 : 0 }, // equal (linguistic, one is normalized)
+                    { "Hello", "HELLO", StringComparison.InvariantCulture, 
+                    PlatformDetection.IsInvariantGlobalization ? 1 : -1 }, // linguistic: lowercase sorts before uppercase
                     { "Hello", "HELLO", StringComparison.InvariantCultureIgnoreCase, 0 },
                 };
             }
@@ -1351,9 +1358,11 @@ namespace Microsoft.Extensions.Primitives
                     { null, string.Empty, StringComparison.Ordinal, false }, // null never starts with anything
                     { string.Empty, string.Empty, StringComparison.Ordinal, true }, // not char-for-char equivalent
                     { string.Empty, "\u200d", StringComparison.Ordinal, false }, // not char-for-char equivalent
-                    { string.Empty, "\u200d", StringComparison.InvariantCulture, true }, // linguistic: ZWJ is zero-weight, occurs at all indices
+                    { string.Empty, "\u200d", StringComparison.InvariantCulture, 
+                    PlatformDetection.IsInvariantGlobalization ? false : true }, // linguistic: ZWJ is zero-weight, occurs at all indices
                     { "\u200d", string.Empty, StringComparison.Ordinal, true }, // all strings trivially start with the empty string
-                    { "\u200d", "\u200d\u200d", StringComparison.InvariantCulture, true }, // linguistic: ZWJ is zero-weight
+                    { "\u200d", "\u200d\u200d", StringComparison.InvariantCulture, 
+                    PlatformDetection.IsInvariantGlobalization ? false : true }, // linguistic: ZWJ is zero-weight
                     { "Hello", "h", StringComparison.Ordinal, false },
                     { "Hello", "h", StringComparison.OrdinalIgnoreCase, true },
                     { "Hello", "hi", StringComparison.Ordinal, false },
@@ -1394,9 +1403,11 @@ namespace Microsoft.Extensions.Primitives
                     { null, string.Empty, StringComparison.Ordinal, false }, // null never ends with anything
                     { string.Empty, string.Empty, StringComparison.Ordinal, true }, // not char-for-char equivalent
                     { string.Empty, "\u200d", StringComparison.Ordinal, false }, // not char-for-char equivalent
-                    { string.Empty, "\u200d", StringComparison.InvariantCulture, true }, // linguistic: ZWJ is zero-weight, occurs at all indices
+                    { string.Empty, "\u200d", StringComparison.InvariantCulture, 
+                    PlatformDetection.IsInvariantGlobalization ? false : true }, // linguistic: ZWJ is zero-weight, occurs at all indices
                     { "\u200d", string.Empty, StringComparison.Ordinal, true }, // all strings trivially ends with the empty string
-                    { "\u200d", "\u200d\u200d", StringComparison.InvariantCulture, true }, // linguistic: ZWJ is zero-weight
+                    { "\u200d", "\u200d\u200d", StringComparison.InvariantCulture, 
+                    PlatformDetection.IsInvariantGlobalization ? false : true }, // linguistic: ZWJ is zero-weight
                     { "HELLO", "o", StringComparison.Ordinal, false },
                     { "HELLO", "o", StringComparison.OrdinalIgnoreCase, true },
                     { "HELLO", "illo", StringComparison.Ordinal, false },

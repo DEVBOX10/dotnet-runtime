@@ -63,6 +63,11 @@ namespace System.Threading
                 Delegate start = _start;
                 _start = null!;
 
+#if FEATURE_OBJCMARSHAL
+                if (AutoreleasePool.EnableAutoreleasePool)
+                    AutoreleasePool.CreateAutoreleasePool();
+#endif
+
                 if (start is ThreadStart threadStart)
                 {
                     threadStart();
@@ -76,6 +81,14 @@ namespace System.Threading
 
                     parameterizedThreadStart(startArg);
                 }
+
+#if FEATURE_OBJCMARSHAL
+                // There is no need to wrap this "clean up" code in a finally block since
+                // if an exception is thrown above, the process is going to terminate.
+                // Optimize for the most common case - no exceptions escape a thread.
+                if (AutoreleasePool.EnableAutoreleasePool)
+                    AutoreleasePool.DrainAutoreleasePool();
+#endif
             }
 
             private void InitializeCulture()
@@ -151,7 +164,8 @@ namespace System.Threading
         }
 
 #if !TARGET_BROWSER
-        internal const bool IsThreadStartSupported = true;
+        [UnsupportedOSPlatformGuard("browser")]
+        internal static bool IsThreadStartSupported => true;
 
         /// <summary>Causes the operating system to change the state of the current instance to <see cref="ThreadState.Running"/>, and optionally supplies an object containing data to be used by the method the thread executes.</summary>
         /// <param name="parameter">An object that contains data to be used by the method the thread executes.</param>
@@ -334,6 +348,17 @@ namespace System.Threading
             }
         }
 
+        [MethodImpl(MethodImplOptions.NoInlining)] // Slow path method. Make sure that the caller frame does not pay for PInvoke overhead.
+        public static void Sleep(int millisecondsTimeout)
+        {
+            if (millisecondsTimeout < Timeout.Infinite)
+                throw new ArgumentOutOfRangeException(nameof(millisecondsTimeout), millisecondsTimeout, SR.ArgumentOutOfRange_NeedNonNegOrNegative1);
+            SleepInternal(millisecondsTimeout);
+        }
+
+        /// <summary>Returns the operating system identifier for the current thread.</summary>
+        internal static ulong CurrentOSThreadId => GetCurrentOSThreadId();
+
         public ExecutionContext? ExecutionContext => ExecutionContext.Capture();
 
         public string? Name
@@ -343,15 +368,10 @@ namespace System.Threading
             {
                 lock (this)
                 {
-                    if (_name != null)
+                    if (_name != value)
                     {
-                        throw new InvalidOperationException(SR.InvalidOperation_WriteOnce);
-                    }
-
-                    _name = value;
-                    ThreadNameChanged(value);
-                    if (value != null)
-                    {
+                        _name = value;
+                        ThreadNameChanged(value);
                         _mayNeedResetForThreadPool = true;
                     }
                 }
@@ -365,10 +385,8 @@ namespace System.Threading
 
             lock (this)
             {
-                // Bypass the exception from setting the property
                 _name = ThreadPool.WorkerThreadName;
                 ThreadNameChanged(ThreadPool.WorkerThreadName);
-                _name = null;
             }
         }
 
@@ -395,7 +413,7 @@ namespace System.Threading
 
             _mayNeedResetForThreadPool = false;
 
-            if (_name != null)
+            if (_name != ThreadPool.WorkerThreadName)
             {
                 SetThreadPoolWorkerThreadName();
             }

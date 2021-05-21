@@ -1,7 +1,6 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
-#nullable enable
 using System.Diagnostics;
 using System.Runtime.InteropServices;
 
@@ -191,7 +190,7 @@ namespace System.Security.Cryptography
             //
             // This is called via PRF, which turns (label || seed) into seed.
 
-#if NETFRAMEWORK || NETCOREAPP3_0
+#if !NET5_0_OR_GREATER
             byte[] secretTmp = new byte[secret.Length];
 
             // Keep secretTmp pinned the whole time it has a secret in it, so it
@@ -252,7 +251,7 @@ namespace System.Security.Cryptography
                             }
                         }
                     }
-#if NETFRAMEWORK || NETCOREAPP3_0
+#if !NET5_0_OR_GREATER
                 }
                 finally
                 {

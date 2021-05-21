@@ -168,6 +168,7 @@
 #define IDS_CLASSLOAD_MI_MISSING_SIG_BODY       0x17a6
 #define IDS_CLASSLOAD_MI_MISSING_SIG_DECL       0x17a7
 #define IDS_CLASSLOAD_MI_BADRETURNTYPE          0x17a8
+#define IDS_CLASSLOAD_STATICVIRTUAL_NOTIMPL     0x17a9
 
 #define IDS_CLASSLOAD_TOOMANYGENERICARGS        0x17ab
 #define IDS_ERROR                               0x17b0
@@ -244,7 +245,6 @@
 #define IDS_EE_VARARG_NOT_SUPPORTED             0x1a0f
 
 #define IDS_EE_INVALID_CA                       0x1a10
-#define IDS_EE_INVALID_CA_EX                    0x1a11
 
 #define IDS_EE_THREADSTART_STATE                0x1a12
 
@@ -271,6 +271,7 @@
 #define IDS_EE_INVALIDCOMDEFITF                 0x1a32
 #define IDS_EE_COMDEFITFNOTSUPPORTED            0x1a33
 
+#define IDS_EE_CLASS_TO_VARIANT_TLB_NOT_REG     0x1a35
 #define IDS_EE_CANNOT_MAP_TO_MANAGED_VC         0x1a36
 
 #define IDS_EE_MARSHAL_UNMAPPABLE_CHAR          0x1a37

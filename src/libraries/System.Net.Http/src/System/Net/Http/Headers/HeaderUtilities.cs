@@ -357,7 +357,7 @@ namespace System.Net.Http.Headers
             {
                 if (headers[i] is HttpHeaders hh)
                 {
-                    foreach (KeyValuePair<string, IEnumerable<string>> header in hh)
+                    foreach (KeyValuePair<string, string[]> header in hh.EnumerateWithoutValidation())
                     {
                         foreach (string headerValue in header.Value)
                         {
@@ -373,22 +373,23 @@ namespace System.Net.Http.Headers
             sb.Append('}');
         }
 
-        internal static bool IsValidEmailAddress(string value)
-        {
-            if (MailAddressParser.TryParseAddress(value, out ParseAddressInfo _, throwExceptionIfFail: false))
-            {
-                return true;
-            }
-            else
-            {
-                if (NetEventSource.Log.IsEnabled()) NetEventSource.Error(null, SR.Format(SR.net_http_log_headers_wrong_email_format, value));
-                return false;
-            }
-        }
-
         private static void ValidateToken(HttpHeaderValueCollection<string> collection, string value)
         {
             CheckValidToken(value, "item");
+        }
+
+        internal static ObjectCollection<NameValueHeaderValue>? Clone(this ObjectCollection<NameValueHeaderValue>? source)
+        {
+            if (source == null)
+                return null;
+
+            var copy = new ObjectCollection<NameValueHeaderValue>();
+            foreach (NameValueHeaderValue item in source)
+            {
+                copy.Add(new NameValueHeaderValue(item));
+            }
+
+            return copy;
         }
     }
 }

@@ -6,6 +6,7 @@ import os
 import sys
 import argparse
 import clang.cindex
+import platform
 
 IOS_DEFINES = ["HOST_DARWIN", "TARGET_MACH", "MONO_CROSS_COMPILE", "USE_MONO_CTX", "_XOPEN_SOURCE"]
 ANDROID_DEFINES = ["HOST_ANDROID", "MONO_CROSS_COMPILE", "USE_MONO_CTX", "BIONIC_IOCTL_NO_SIGNEDNESS_OVERLOAD"]
@@ -75,7 +76,7 @@ class OffsetsTool:
 		if not os.path.isfile (args.target_path + "/config.h"):
 			print ("File '" + args.target_path + "/config.h' doesn't exist.", file=sys.stderr)
 			sys.exit (1)
-			
+
 		self.sys_includes=[]
 		self.target = None
 		self.target_args = []
@@ -84,6 +85,8 @@ class OffsetsTool:
 		if "wasm" in args.abi:
 			require_emscipten_path (args)
 			self.sys_includes = [args.emscripten_path + "/system/include", args.emscripten_path + "/system/include/libc", args.emscripten_path + "/system/lib/libc/musl/arch/emscripten"]
+			if platform.system() == "Windows":
+				self.sys_includes += [args.emscripten_path + "/system/lib/libc/musl/include", args.emscripten_path + "/system/lib/libc/musl/arch/generic"]
 			self.target = Target ("TARGET_WASM", None, [])
 			self.target_args += ["-target", args.abi]
 
@@ -152,6 +155,19 @@ class OffsetsTool:
 			self.target_args += ["-arch", "x86_64"]
 			self.target_args += ["-isysroot", args.sysroot]
 
+		# MacCatalyst
+		elif "x86_64-apple-maccatalyst" == args.abi:
+			require_sysroot (args)
+			self.target = Target ("TARGET_AMD64", "TARGET_MACCAT", IOS_DEFINES)
+			self.target_args += ["-target", "x86_64-apple-ios13.5-macabi"]
+			self.target_args += ["-isysroot", args.sysroot]
+
+		elif "aarch64-apple-maccatalyst" == args.abi:
+			require_sysroot (args)
+			self.target = Target ("TARGET_ARM64", "TARGET_MACCAT", IOS_DEFINES)
+			self.target_args += ["-target", "arm64-apple-ios14.2-macabi"]
+			self.target_args += ["-isysroot", args.sysroot]
+
 		# watchOS
 		elif "armv7k-apple-darwin" == args.abi:
 			require_sysroot (args)
@@ -193,9 +209,6 @@ class OffsetsTool:
 		if not self.target:
 			print ("ABI '" + args.abi + "' is not supported.", file=sys.stderr)
 			sys.exit (1)
-
-		if args.netcore:
-			self.target_args += ["-DENABLE_NETCORE"]
 
 		self.args = args
 

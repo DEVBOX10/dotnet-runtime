@@ -427,7 +427,10 @@ int32_t SystemNative_ReadDirR(DIR* dir, uint8_t* buffer, int32_t bufferSize, Dir
         return errno == 0 ? -1 : errno;
     }
 #else
-    int error = readdir_r(dir, entry, &result);
+    int error;
+
+    // EINTR isn't documented, happens in practice on macOS.
+    while ((error = readdir_r(dir, entry, &result)) && errno == EINTR);
 
     // positive error number returned -> failure
     if (error != 0)
@@ -473,12 +476,27 @@ int32_t SystemNative_ReadDirR(DIR* dir, uint8_t* buffer, int32_t bufferSize, Dir
 
 DIR* SystemNative_OpenDir(const char* path)
 {
-    return opendir(path);
+    DIR *result;
+
+    // EINTR isn't documented, happens in practice on macOS.
+    while ((result = opendir(path)) == NULL && errno == EINTR);
+
+    return result;
 }
 
 int32_t SystemNative_CloseDir(DIR* dir)
 {
-    return closedir(dir);
+    int32_t result;
+
+    result = closedir(dir);
+
+    // EINTR isn't documented, happens in practice on macOS.
+    if (result < 0 && errno == EINTR)
+    {
+        result = 0;
+    }
+
+    return result;
 }
 
 int32_t SystemNative_Pipe(int32_t pipeFds[2], int32_t flags)
@@ -644,7 +662,7 @@ int32_t SystemNative_FSync(intptr_t fd)
     int fileDescriptor = ToFileDescriptor(fd);
 
     int32_t result;
-    while ((result = 
+    while ((result =
 #if defined(TARGET_OSX) && HAVE_F_FULLFSYNC
     fcntl(fileDescriptor, F_FULLFSYNC)
 #else
@@ -973,6 +991,85 @@ int32_t SystemNative_PosixFAdvise(intptr_t fd, int64_t offset, int64_t length, i
 #endif
 }
 
+int32_t SystemNative_PosixFAllocate(intptr_t fd, int64_t offset, int64_t length)
+{
+    assert_msg(offset == 0, "Invalid offset value", (int)offset);
+
+    int fileDescriptor = ToFileDescriptor(fd);
+    int32_t result;
+#if HAVE_POSIX_FALLOCATE64 // 64-bit Linux
+    while ((result = posix_fallocate64(fileDescriptor, (off64_t)offset, (off64_t)length)) == EINTR);
+#elif HAVE_POSIX_FALLOCATE // 32-bit Linux
+    while ((result = posix_fallocate(fileDescriptor, (off_t)offset, (off_t)length)) == EINTR);
+#elif defined(F_PREALLOCATE) // macOS
+    fstore_t fstore;
+    fstore.fst_flags = F_ALLOCATECONTIG; // ensure contiguous space
+    fstore.fst_posmode = F_PEOFPOSMODE;  // allocate from the physical end of file, as offset MUST NOT be 0 for F_VOLPOSMODE
+    fstore.fst_offset = (off_t)offset;
+    fstore.fst_length = (off_t)length;
+    fstore.fst_bytesalloc = 0; // output size, can be > length
+
+    while ((result = fcntl(fileDescriptor, F_PREALLOCATE, &fstore)) == -1 && errno == EINTR);
+
+    if (result == -1)
+    {
+        // we have failed to allocate contiguous space, let's try non-contiguous
+        fstore.fst_flags = F_ALLOCATEALL; // all or nothing
+        while ((result = fcntl(fileDescriptor, F_PREALLOCATE, &fstore)) == -1 && errno == EINTR);
+    }
+#elif defined(F_ALLOCSP) || defined(F_ALLOCSP64) // FreeBSD
+    #if HAVE_FLOCK64
+    struct flock64 lockArgs;
+    int command = F_ALLOCSP64;
+    #else
+    struct flock lockArgs;
+    int command = F_ALLOCSP;
+    #endif
+
+    lockArgs.l_whence = SEEK_SET;
+    lockArgs.l_start = (off_t)offset;
+    lockArgs.l_len = (off_t)length;
+
+    while ((result = fcntl(fileDescriptor, command, &lockArgs)) == -1 && errno == EINTR);
+#endif
+
+#if defined(F_PREALLOCATE) || defined(F_ALLOCSP) || defined(F_ALLOCSP64)
+    // most of the Unixes implement posix_fallocate which does NOT set the last error
+    // fctnl does, but to mimic the posix_fallocate behaviour we just return error
+    if (result == -1)
+    {
+        result = errno;
+    }
+    else
+    {
+        // align the behaviour with what posix_fallocate does (change reported file size)
+        ftruncate(fileDescriptor, length);
+    }
+#endif
+
+    // error codes can be OS-specific, so this is why this handling is done here rather than in the managed layer
+    switch (result)
+    {
+        case ENOSPC: // there was not enough space
+            return -1;
+        case EFBIG: // the file was too large
+            return -2;
+        case ENODEV: // not a regular file
+        case ESPIPE: // a pipe
+            // We ignore it, as FileStream contract makes it clear that allocationSize is ignored for non-regular files.
+            return 0;
+        case EINVAL:
+            // We control the offset and length so they are correct.
+            assert_msg(length >= 0, "Invalid length value", (int)length);
+            // But if the underlying filesystem does not support the operation, we just ignore it and treat as a hint.
+            return 0;
+        default:
+            assert(result != EINTR); // it can't happen here as we retry the call on EINTR
+            assert(result != EBADF); // it can't happen here as this method is being called after a succesfull call to open (with write permissions) before returning the SafeFileHandle to the user
+            return 0;
+    }
+}
+
 int32_t SystemNative_Read(intptr_t fd, void* buffer, int32_t bufferSize)
 {
     return Common_Read(fd, buffer, bufferSize);
@@ -1166,7 +1263,7 @@ int32_t SystemNative_CopyFile(intptr_t sourceFd, intptr_t destinationFd)
 #endif
     }
     // If we copied to a filesystem (eg EXFAT) that does not preserve POSIX ownership, all files appear
-    // to be owned by root. If we aren't running as root, then we won't be an owner of our new file, and 
+    // to be owned by root. If we aren't running as root, then we won't be an owner of our new file, and
     // attempting to copy metadata to it will fail with EPERM. We have copied successfully, we just can't
     // copy metadata. The best thing we can do is skip copying the metadata.
     if (ret != 0 && errno != EPERM)
@@ -1263,8 +1360,27 @@ char* SystemNative_RealPath(const char* path)
     return realpath(path, NULL);
 }
 
+static int16_t ConvertLockType(int16_t managedLockType)
+{
+    // the managed enum Interop.Sys.LockType has no 1:1 mapping with corresponding Unix values
+    // which can be different per distro:
+    // https://github.com/torvalds/linux/blob/fcadab740480e0e0e9fa9bd272acd409884d431a/arch/alpha/include/uapi/asm/fcntl.h#L48-L50
+    // https://github.com/freebsd/freebsd-src/blob/fb8c2f743ab695f6004650b58bf96972e2535b20/sys/sys/fcntl.h#L277-L279
+    switch (managedLockType)
+    {
+        case 0:
+            return F_RDLCK;
+        case 1:
+            return F_WRLCK;
+        default:
+            assert_msg(managedLockType == 2, "Unknown Lock Type", (int)managedLockType);
+            return F_UNLCK;
+    }
+}
+
 int32_t SystemNative_LockFileRegion(intptr_t fd, int64_t offset, int64_t length, int16_t lockType)
 {
+    int16_t unixLockType = ConvertLockType(lockType);
     if (offset < 0 || length < 0)
     {
         errno = EINVAL;
@@ -1277,7 +1393,7 @@ int32_t SystemNative_LockFileRegion(intptr_t fd, int64_t offset, int64_t length,
     struct flock lockArgs;
 #endif
 
-    lockArgs.l_type = lockType;
+    lockArgs.l_type = unixLockType;
     lockArgs.l_whence = SEEK_SET;
     lockArgs.l_start = (off_t)offset;
     lockArgs.l_len = (off_t)length;
