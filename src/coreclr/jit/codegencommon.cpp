@@ -2403,11 +2403,19 @@ void CodeGen::genEmitMachineCode()
     if (compiler->opts.disAsm || verbose)
     {
         printf("\n; Total bytes of code %d, prolog size %d, PerfScore %.2f, instruction count %d, allocated bytes for "
-               "code %d (MethodHash=%08x) for "
-               "method %s\n",
+               "code %d",
                codeSize, prologSize, compiler->info.compPerfScore, instrCount,
-               GetEmitter()->emitTotalHotCodeSize + GetEmitter()->emitTotalColdCodeSize,
-               compiler->info.compMethodHash(), compiler->info.compFullName);
+               GetEmitter()->emitTotalHotCodeSize + GetEmitter()->emitTotalColdCodeSize);
+
+#if TRACK_LSRA_STATS
+        if (JitConfig.DisplayLsraStats() == 3)
+        {
+            compiler->m_pLinearScan->dumpLsraStatsSummary(jitstdout);
+        }
+#endif // TRACK_LSRA_STATS
+
+        printf(" (MethodHash=%08x) for method %s\n", compiler->info.compMethodHash(), compiler->info.compFullName);
+
         printf("; ============================================================\n\n");
         printf(""); // in our logic this causes a flush
     }
@@ -11692,7 +11700,8 @@ void CodeGenInterface::VariableLiveKeeper::VariableLiveRange::dumpVariableLiveRa
     const CodeGenInterface* codeGen) const
 {
     codeGen->dumpSiVarLoc(&m_VarLocation);
-    printf(" [ ");
+
+    printf(" [");
     m_StartEmitLocation.Print(codeGen->GetCompiler()->compMethodID);
     printf(", ");
     if (m_EndEmitLocation.Valid())
@@ -11701,9 +11710,9 @@ void CodeGenInterface::VariableLiveKeeper::VariableLiveRange::dumpVariableLiveRa
     }
     else
     {
-        printf("NON_CLOSED_RANGE");
+        printf("...");
     }
-    printf(" ]; ");
+    printf("]");
 }
 
 // Dump "VariableLiveRange" when code has been generated and we have the assembly native offset of each "emitLocation"
@@ -11719,7 +11728,7 @@ void CodeGenInterface::VariableLiveKeeper::VariableLiveRange::dumpVariableLiveRa
     // If this is an open "VariableLiveRange", "m_EndEmitLocation" is non-valid and print -1
     UNATIVE_OFFSET endAssemblyOffset = m_EndEmitLocation.Valid() ? m_EndEmitLocation.CodeOffset(emit) : -1;
 
-    printf(" [%X , %X )", m_StartEmitLocation.CodeOffset(emit), m_EndEmitLocation.CodeOffset(emit));
+    printf(" [%X, %X)", m_StartEmitLocation.CodeOffset(emit), m_EndEmitLocation.CodeOffset(emit));
 }
 
 //------------------------------------------------------------------------
@@ -11963,25 +11972,31 @@ void CodeGenInterface::VariableLiveKeeper::VariableLiveDescriptor::updateLiveRan
 void CodeGenInterface::VariableLiveKeeper::VariableLiveDescriptor::dumpAllRegisterLiveRangesForBlock(
     emitter* emit, const CodeGenInterface* codeGen) const
 {
-    printf("[");
+    bool first = true;
     for (LiveRangeListIterator it = m_VariableLiveRanges->begin(); it != m_VariableLiveRanges->end(); it++)
     {
+        if (!first)
+        {
+            printf("; ");
+        }
         it->dumpVariableLiveRange(emit, codeGen);
+        first = false;
     }
-    printf("]\n");
 }
 
 void CodeGenInterface::VariableLiveKeeper::VariableLiveDescriptor::dumpRegisterLiveRangesForBlockBeforeCodeGenerated(
     const CodeGenInterface* codeGen) const
 {
-    noway_assert(codeGen != nullptr);
-
-    printf("[");
+    bool first = true;
     for (LiveRangeListIterator it = m_VariableLifeBarrier->getStartForDump(); it != m_VariableLiveRanges->end(); it++)
     {
+        if (!first)
+        {
+            printf("; ");
+        }
         it->dumpVariableLiveRange(codeGen);
+        first = false;
     }
-    printf("]\n");
 }
 
 // Returns true if a live range for this variable has been recorded
@@ -12420,41 +12435,33 @@ void CodeGenInterface::VariableLiveKeeper::psiClosePrologVariableRanges()
 #ifdef DEBUG
 void CodeGenInterface::VariableLiveKeeper::dumpBlockVariableLiveRanges(const BasicBlock* block)
 {
-    // "block" will be dereferenced
-    noway_assert(block != nullptr);
+    assert(block != nullptr);
 
     bool hasDumpedHistory = false;
 
-    if (m_Compiler->verbose)
+    printf("\nVariable Live Range History Dump for " FMT_BB "\n", block->bbNum);
+
+    if (m_Compiler->opts.compDbgInfo)
     {
-        printf("////////////////////////////////////////\n");
-        printf("////////////////////////////////////////\n");
-        printf("Variable Live Range History Dump for Block %d \n", block->bbNum);
-
-        if (m_Compiler->opts.compDbgInfo)
+        for (unsigned int varNum = 0; varNum < m_LiveDscCount; varNum++)
         {
-            for (unsigned int varNum = 0; varNum < m_LiveDscCount; varNum++)
-            {
-                VariableLiveDescriptor* varLiveDsc = m_vlrLiveDsc + varNum;
+            VariableLiveDescriptor* varLiveDsc = m_vlrLiveDsc + varNum;
 
-                if (varLiveDsc->hasVarLiveRangesFromLastBlockToDump())
-                {
-                    hasDumpedHistory = true;
-                    printf("IL Var Num %d:\n", m_Compiler->compMap2ILvarNum(varNum));
-                    varLiveDsc->dumpRegisterLiveRangesForBlockBeforeCodeGenerated(m_Compiler->codeGen);
-                    varLiveDsc->endBlockLiveRanges();
-                }
+            if (varLiveDsc->hasVarLiveRangesFromLastBlockToDump())
+            {
+                hasDumpedHistory = true;
+                m_Compiler->gtDispLclVar(varNum, false);
+                printf(": ");
+                varLiveDsc->dumpRegisterLiveRangesForBlockBeforeCodeGenerated(m_Compiler->codeGen);
+                varLiveDsc->endBlockLiveRanges();
+                printf("\n");
             }
         }
+    }
 
-        if (!hasDumpedHistory)
-        {
-            printf("..None..\n");
-        }
-
-        printf("////////////////////////////////////////\n");
-        printf("////////////////////////////////////////\n");
-        printf("End Generating code for Block %d \n", block->bbNum);
+    if (!hasDumpedHistory)
+    {
+        printf("..None..\n");
     }
 }
 
@@ -12462,34 +12469,28 @@ void CodeGenInterface::VariableLiveKeeper::dumpLvaVariableLiveRanges() const
 {
     bool hasDumpedHistory = false;
 
-    if (m_Compiler->verbose)
+    printf("VARIABLE LIVE RANGES:\n");
+
+    if (m_Compiler->opts.compDbgInfo)
     {
-        printf("////////////////////////////////////////\n");
-        printf("////////////////////////////////////////\n");
-        printf("PRINTING VARIABLE LIVE RANGES:\n");
-
-        if (m_Compiler->opts.compDbgInfo)
+        for (unsigned int varNum = 0; varNum < m_LiveDscCount; varNum++)
         {
-            for (unsigned int varNum = 0; varNum < m_LiveDscCount; varNum++)
-            {
-                VariableLiveDescriptor* varLiveDsc = m_vlrLiveDsc + varNum;
+            VariableLiveDescriptor* varLiveDsc = m_vlrLiveDsc + varNum;
 
-                if (varLiveDsc->hasVarLiveRangesToDump())
-                {
-                    hasDumpedHistory = true;
-                    printf("IL Var Num %d:\n", m_Compiler->compMap2ILvarNum(varNum));
-                    varLiveDsc->dumpAllRegisterLiveRangesForBlock(m_Compiler->GetEmitter(), m_Compiler->codeGen);
-                }
+            if (varLiveDsc->hasVarLiveRangesToDump())
+            {
+                hasDumpedHistory = true;
+                m_Compiler->gtDispLclVar(varNum, false);
+                printf(": ");
+                varLiveDsc->dumpAllRegisterLiveRangesForBlock(m_Compiler->GetEmitter(), m_Compiler->codeGen);
+                printf("\n");
             }
         }
+    }
 
-        if (!hasDumpedHistory)
-        {
-            printf("..None..\n");
-        }
-
-        printf("////////////////////////////////////////\n");
-        printf("////////////////////////////////////////\n");
+    if (!hasDumpedHistory)
+    {
+        printf("..None..\n");
     }
 }
 #endif // DEBUG
