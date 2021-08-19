@@ -7088,6 +7088,9 @@ mono_method_to_ir (MonoCompile *cfg, MonoMethod *method, MonoBasicBlock *start_b
 			inst_tailcall && is_supported_tailcall (cfg, ip, method, NULL, fsig,
 						FALSE/*virtual irrelevant*/, addr != NULL, &tailcall);
 
+			if (save_last_error)
+				mono_emit_jit_icall (cfg, mono_marshal_clear_last_error, NULL);
+
 			if (callee) {
 				if (method->wrapper_type != MONO_WRAPPER_DELEGATE_INVOKE)
 					/* Not tested */
@@ -7311,7 +7314,7 @@ mono_method_to_ir (MonoCompile *cfg, MonoMethod *method, MonoBasicBlock *start_b
 
 			sp -= n;
 
-			if (virtual_ && cmethod && sp [0]->opcode == OP_TYPED_OBJREF) {
+			if (virtual_ && cmethod && sp [0] && sp [0]->opcode == OP_TYPED_OBJREF) {
 				ERROR_DECL (error);
 
 				MonoMethod *new_cmethod = mono_class_get_virtual_method (sp [0]->klass, cmethod, error);
@@ -7587,10 +7590,6 @@ mono_method_to_ir (MonoCompile *cfg, MonoMethod *method, MonoBasicBlock *start_b
 						will_have_imt_arg = TRUE;
 					}
 				}
-			}
-
-			if (save_last_error) {
-				mono_emit_jit_icall (cfg, mono_marshal_clear_last_error, NULL);
 			}
 
 			/* Tail prefix / tailcall optimization */
