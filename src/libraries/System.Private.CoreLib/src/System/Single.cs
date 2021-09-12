@@ -182,6 +182,7 @@ namespace System
             throw new ArgumentException(SR.Arg_MustBeSingle);
         }
 
+        [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public int CompareTo(float value)
         {
             if (m_value < value) return -1;
@@ -746,6 +747,30 @@ namespace System
         [RequiresPreviewFeatures]
         static float IFloatingPoint<float>.Truncate(float x)
             => MathF.Truncate(x);
+
+        [RequiresPreviewFeatures]
+        static bool IFloatingPoint<float>.IsFinite(float x) => IsFinite(x);
+
+        [RequiresPreviewFeatures]
+        static bool IFloatingPoint<float>.IsInfinity(float x) => IsInfinity(x);
+
+        [RequiresPreviewFeatures]
+        static bool IFloatingPoint<float>.IsNaN(float x) => IsNaN(x);
+
+        [RequiresPreviewFeatures]
+        static bool IFloatingPoint<float>.IsNegative(float x) => IsNegative(x);
+
+        [RequiresPreviewFeatures]
+        static bool IFloatingPoint<float>.IsNegativeInfinity(float x) => IsNegativeInfinity(x);
+
+        [RequiresPreviewFeatures]
+        static bool IFloatingPoint<float>.IsNormal(float x) => IsNormal(x);
+
+        [RequiresPreviewFeatures]
+        static bool IFloatingPoint<float>.IsPositiveInfinity(float x) => IsPositiveInfinity(x);
+
+        [RequiresPreviewFeatures]
+        static bool IFloatingPoint<float>.IsSubnormal(float x) => IsSubnormal(x);
 
         // static float IFloatingPoint<float>.AcosPi(float x)
         //     => MathF.AcosPi(x);

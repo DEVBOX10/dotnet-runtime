@@ -32,6 +32,8 @@ namespace System.Text.Json.SourceGeneration
         /// </summary>
         public string RuntimePropertyName { get; init; }
 
+        public string PropertyNameVarName { get; init; }
+
         /// <summary>
         /// Whether the property has a set method.
         /// </summary>
@@ -74,6 +76,11 @@ namespace System.Text.Json.SourceGeneration
         public bool HasJsonInclude { get; init; }
 
         /// <summary>
+        /// Whether the property has the JsonExtensionDataAttribute.
+        /// </summary>
+        public bool IsExtensionData { get; init; }
+
+        /// <summary>
         /// Generation specification for the property's type.
         /// </summary>
         public TypeGenerationSpec TypeGenerationSpec { get; init; }
@@ -87,5 +94,7 @@ namespace System.Text.Json.SourceGeneration
         /// Source code to instantiate design-time specified custom converter.
         /// </summary>
         public string? ConverterInstantiationLogic { get; init; }
+
+        public bool HasFactoryConverter { get; init; }
     }
 }
