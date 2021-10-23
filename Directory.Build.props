@@ -62,6 +62,8 @@
 
     <NetFrameworkMinimum>net462</NetFrameworkMinimum>
     <NetFrameworkToolCurrent>net472</NetFrameworkToolCurrent>
+    <!-- Don't build for NETFramework during source-build. -->
+    <NetFrameworkToolCurrent Condition="'$(DotNetBuildFromSource)' == 'true'" />
   </PropertyGroup>
 
   <PropertyGroup>
@@ -211,6 +213,10 @@
     <MicrosoftNetCoreAppRuntimePackRidDir>$([MSBuild]::NormalizeDirectory('$(MicrosoftNetCoreAppRuntimePackDir)', 'runtimes', '$(PackageRID)'))</MicrosoftNetCoreAppRuntimePackRidDir>
     <MicrosoftNetCoreAppRuntimePackRidLibTfmDir>$([MSBuild]::NormalizeDirectory('$(MicrosoftNetCoreAppRuntimePackRidDir)', 'lib', '$(NetCoreAppCurrent)'))</MicrosoftNetCoreAppRuntimePackRidLibTfmDir>
     <MicrosoftNetCoreAppRuntimePackNativeDir>$([MSBuild]::NormalizeDirectory('$(MicrosoftNetCoreAppRuntimePackRidDir)', 'native'))</MicrosoftNetCoreAppRuntimePackNativeDir>
+  </PropertyGroup>
+
+  <PropertyGroup>
+    <DotNetHostBinDir>$([MSBuild]::NormalizeDirectory('$(ArtifactsBinDir)', '$(OutputRid).$(Configuration)', 'corehost'))</DotNetHostBinDir>
   </PropertyGroup>
 
   <!--Feature switches -->

@@ -2337,10 +2337,10 @@ GenTree* Compiler::impRuntimeLookupToTree(CORINFO_RESOLVED_TOKEN* pResolvedToken
         indir->gtFlags |= GTF_IND_NONFAULTING;
         indir->gtFlags |= GTF_IND_INVARIANT;
 
-        slot           = gtNewLclvNode(slotLclNum, TYP_I_IMPL);
-        GenTree* asg   = gtNewAssignNode(slot, indir);
-        GenTree* colon = new (this, GT_COLON) GenTreeColon(TYP_VOID, gtNewNothingNode(), asg);
-        GenTree* qmark = gtNewQmarkNode(TYP_VOID, relop, colon);
+        slot                = gtNewLclvNode(slotLclNum, TYP_I_IMPL);
+        GenTree*      asg   = gtNewAssignNode(slot, indir);
+        GenTreeColon* colon = new (this, GT_COLON) GenTreeColon(TYP_VOID, gtNewNothingNode(), asg);
+        GenTreeQmark* qmark = gtNewQmarkNode(TYP_VOID, relop, colon);
         impAppendTree(qmark, (unsigned)CHECK_SPILL_NONE, impCurStmtOffs);
 
         return gtNewLclvNode(slotLclNum, TYP_I_IMPL);
@@ -6865,59 +6865,113 @@ void Compiler::impImportAndPushBox(CORINFO_RESOLVED_TOKEN* pResolvedToken)
         // the opcode stack becomes empty
         impBoxTempInUse = true;
 
+        // Remember the current last statement in case we need to move
+        // a range of statements to ensure the box temp is initialized
+        // before it's used.
+        //
+        Statement* const cursor = impLastStmt;
+
         const bool useParent = false;
         op1                  = gtNewAllocObjNode(pResolvedToken, useParent);
         if (op1 == nullptr)
         {
+            // If we fail to create the newobj node, we must be inlining
+            // and have run across a type we can't describe.
+            //
+            assert(compDonotInline());
             return;
         }
 
-        /* Remember that this basic block contains 'new' of an object, and so does this method */
+        // Remember that this basic block contains 'new' of an object,
+        // and so does this method
+        //
         compCurBB->bbFlags |= BBF_HAS_NEWOBJ;
         optMethodFlags |= OMF_HAS_NEWOBJ;
 
-        GenTree* asg = gtNewTempAssign(impBoxTemp, op1);
-
+        // Assign the boxed object to the box temp.
+        //
+        GenTree*   asg     = gtNewTempAssign(impBoxTemp, op1);
         Statement* asgStmt = impAppendTree(asg, (unsigned)CHECK_SPILL_NONE, impCurStmtOffs);
 
+        // If the exprToBox is a call that returns its value via a ret buf arg,
+        // move the assignment statement(s) before the call (which must be a top level tree).
+        //
+        // We do this because impAssignStructPtr (invoked below) will
+        // back-substitute into a call when it sees a GT_RET_EXPR and the call
+        // has a hidden buffer pointer, So we need to reorder things to avoid
+        // creating out-of-sequence IR.
+        //
+        if (varTypeIsStruct(exprToBox) && exprToBox->OperIs(GT_RET_EXPR))
+        {
+            GenTreeCall* const call = exprToBox->AsRetExpr()->gtInlineCandidate->AsCall();
+
+            if (call->HasRetBufArg())
+            {
+                JITDUMP("Must insert newobj stmts for box before call [%06u]\n", dspTreeID(call));
+
+                // Walk back through the statements in this block, looking for the one
+                // that has this call as the root node.
+                //
+                // Because gtNewTempAssign (above) may have added statements that
+                // feed into the actual assignment we need to move this set of added
+                // statements as a group.
+                //
+                // Note boxed allocations are side-effect free (no com or finalizer) so
+                // our only worries here are (correctness) not overlapping the box temp
+                // lifetime and (perf) stretching the temp lifetime across the inlinee
+                // body.
+                //
+                // Since this is an inline candidate, we must be optimizing, and so we have
+                // a unique box temp per call. So no worries about overlap.
+                //
+                assert(!opts.OptimizationDisabled());
+
+                // Lifetime stretching could addressed with some extra cleverness--sinking
+                // the allocation back down to just before the copy, once we figure out
+                // where the copy is. We defer for now.
+                //
+                Statement* insertBeforeStmt = cursor;
+                noway_assert(insertBeforeStmt != nullptr);
+
+                while (true)
+                {
+                    if (insertBeforeStmt->GetRootNode() == call)
+                    {
+                        break;
+                    }
+
+                    // If we've searched all the statements in the block and failed to
+                    // find the call, then something's wrong.
+                    //
+                    noway_assert(insertBeforeStmt != impStmtList);
+
+                    insertBeforeStmt = insertBeforeStmt->GetPrevStmt();
+                }
+
+                // Found the call. Move the statements comprising the assignment.
+                //
+                JITDUMP("Moving " FMT_STMT "..." FMT_STMT " before " FMT_STMT "\n", cursor->GetNextStmt()->GetID(),
+                        asgStmt->GetID(), insertBeforeStmt->GetID());
+                assert(asgStmt == impLastStmt);
+                do
+                {
+                    Statement* movingStmt = impExtractLastStmt();
+                    impInsertStmtBefore(movingStmt, insertBeforeStmt);
+                    insertBeforeStmt = movingStmt;
+                } while (impLastStmt != cursor);
+            }
+        }
+
+        // Create a pointer to the box payload in op1.
+        //
         op1 = gtNewLclvNode(impBoxTemp, TYP_REF);
         op2 = gtNewIconNode(TARGET_POINTER_SIZE, TYP_I_IMPL);
         op1 = gtNewOperNode(GT_ADD, TYP_BYREF, op1, op2);
 
+        // Copy from the exprToBox to the box payload.
+        //
         if (varTypeIsStruct(exprToBox))
         {
-            // Workaround for GitHub issue 53549.
-            //
-            // If the struct being boxed is returned via hidden buffer and comes from an inline/gdv candidate,
-            // the IR we produce after importation is out of order:
-            //
-            //    call (&(box-temp + 8), ....)
-            //    box-temp = newobj
-            //    ret-val from call (void)
-            //        ... box-temp (on stack)
-            //
-            // For inline candidates this bad ordering gets fixed up during inlining, but for GDV candidates
-            // the GDV expansion is such that the newobj follows the call as in the above.
-            //
-            // This is nontrivial to fix in GDV, so in these (rare) cases we simply disable GDV.
-            //
-            if (exprToBox->OperIs(GT_RET_EXPR))
-            {
-                GenTreeCall* const call = exprToBox->AsRetExpr()->gtInlineCandidate->AsCall();
-
-                if (call->IsGuardedDevirtualizationCandidate() && call->HasRetBufArg())
-                {
-                    JITDUMP("Disabling GDV for [%06u] because of in-box struct return\n");
-                    call->ClearGuardedDevirtualizationCandidate();
-                    if (call->IsVirtualStub())
-                    {
-                        JITDUMP("Restoring stub addr %p from guarded devirt candidate info\n",
-                                dspPtr(call->gtGuardedDevirtualizationCandidateInfo->stubAddr));
-                        call->gtStubCallStubAddr = call->gtGuardedDevirtualizationCandidateInfo->stubAddr;
-                    }
-                }
-            }
-
             assert(info.compCompHnd->getClassSize(pResolvedToken->hClass) == info.compCompHnd->getClassSize(operCls));
             op1 = impAssignStructPtr(op1, exprToBox, operCls, (unsigned)CHECK_SPILL_ALL);
         }
@@ -7435,7 +7489,7 @@ void Compiler::impCheckForPInvokeCall(
         }
     }
 
-    JITLOG((LL_INFO1000000, "\nInline a CALLI PINVOKE call from method %s", info.compFullName));
+    JITLOG((LL_INFO1000000, "\nInline a CALLI PINVOKE call from method %s\n", info.compFullName));
 
     call->gtFlags |= GTF_CALL_UNMANAGED;
     call->unmgdCallConv = unmanagedCallConv;
@@ -11245,7 +11299,7 @@ GenTree* Compiler::impCastClassOrIsInstToTree(GenTree*                op1,
     //                condFalse  condTrue
     //
     temp    = new (this, GT_COLON) GenTreeColon(TYP_REF, condTrue, condFalse);
-    qmarkMT = gtNewQmarkNode(TYP_REF, condMT, temp);
+    qmarkMT = gtNewQmarkNode(TYP_REF, condMT, temp->AsColon());
 
     if (isCastClass && impIsClassExact(pResolvedToken->hClass) && condTrue->OperIs(GT_CALL))
     {
@@ -11264,7 +11318,7 @@ GenTree* Compiler::impCastClassOrIsInstToTree(GenTree*                op1,
     //                qmarkMT   op1Copy
     //
     temp      = new (this, GT_COLON) GenTreeColon(TYP_REF, gtClone(op1), qmarkMT);
-    qmarkNull = gtNewQmarkNode(TYP_REF, condNull, temp);
+    qmarkNull = gtNewQmarkNode(TYP_REF, condNull, temp->AsColon());
     qmarkNull->gtFlags |= GTF_QMARK_CAST_INSTOF;
 
     // Make QMark node a top level node by spilling it.
@@ -12064,15 +12118,6 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                 }
                 else
                 {
-                    // The code generator generates GC tracking information
-                    // based on the RHS of the assignment.  Later the LHS (which is
-                    // is a BYREF) gets used and the emitter checks that that variable
-                    // is being tracked.  It is not (since the RHS was an int and did
-                    // not need tracking).  To keep this assert happy, we change the RHS
-                    if (lclTyp == TYP_BYREF && !varTypeIsGC(op1->gtType))
-                    {
-                        op1->gtType = TYP_BYREF;
-                    }
                     op1 = gtNewAssignNode(op2, op1);
                 }
 
@@ -15010,7 +15055,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                             op1->gtFlags |= GTF_EXCEPT;
                         }
 
-                        // If gtFldObj is a BYREF then our target is a value class and
+                        // If the object is a BYREF then our target is a value class and
                         // it could point anywhere, example a boxed class static int
                         if (obj->gtType == TYP_BYREF)
                         {
@@ -15336,7 +15381,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                             op1->gtFlags |= GTF_EXCEPT;
                         }
 
-                        // If gtFldObj is a BYREF then our target is a value class and
+                        // If object is a BYREF then our target is a value class and
                         // it could point anywhere, example a boxed class static int
                         if (obj->gtType == TYP_BYREF)
                         {
@@ -16120,7 +16165,7 @@ void Compiler::impImportBlockCode(BasicBlock* block)
                     op1 = gtNewHelperCallNode(helper, TYP_VOID, gtNewCallArgs(op2, op1));
 
                     op1 = new (this, GT_COLON) GenTreeColon(TYP_VOID, gtNewNothingNode(), op1);
-                    op1 = gtNewQmarkNode(TYP_VOID, condBox, op1);
+                    op1 = gtNewQmarkNode(TYP_VOID, condBox, op1->AsColon());
 
                     // QMARK nodes cannot reside on the evaluation stack. Because there
                     // may be other trees on the evaluation stack that side-effect the
@@ -18858,7 +18903,6 @@ void Compiler::impImport()
     // Skip leading internal blocks.
     // These can arise from needing a leading scratch BB, from EH normalization, and from OSR entry redirects.
     //
-    // We expect a linear flow to the first non-internal block. But not necessarily straght-line flow.
     BasicBlock* entryBlock = fgFirstBB;
 
     while (entryBlock->bbFlags & BBF_INTERNAL)
@@ -18870,10 +18914,8 @@ void Compiler::impImport()
         {
             entryBlock = entryBlock->bbNext;
         }
-        else if (entryBlock->bbJumpKind == BBJ_ALWAYS)
+        else if (opts.IsOSR() && (entryBlock->bbJumpKind == BBJ_ALWAYS))
         {
-            // Only expected for OSR
-            assert(opts.IsOSR());
             entryBlock = entryBlock->bbJumpDest;
         }
         else
@@ -19006,7 +19048,7 @@ bool Compiler::impIsAddressInLocal(const GenTree* tree, GenTree** lclVarTreeOut)
     GenTree* op = tree->AsOp()->gtOp1;
     while (op->gtOper == GT_FIELD)
     {
-        op = op->AsField()->gtFldObj;
+        op = op->AsField()->GetFldObj();
         if (op && op->gtOper == GT_ADDR) // Skip static fields where op will be NULL.
         {
             op = op->AsOp()->gtOp1;
@@ -20375,8 +20417,33 @@ GenTree* Compiler::impInlineFetchArg(unsigned lclNum, InlArgInfo* inlArgInfo, In
             // TODO-1stClassStructs: We currently do not reuse an existing lclVar
             // if it is a struct, because it requires some additional handling.
 
-            if (!varTypeIsStruct(lclTyp) && !argInfo.argHasSideEff && !argInfo.argHasGlobRef &&
-                !argInfo.argHasCallerLocalRef)
+            bool substitute = false;
+            switch (argNode->OperGet())
+            {
+#ifdef FEATURE_HW_INTRINSICS
+                case GT_HWINTRINSIC:
+                {
+                    // Enable for all parameterless (=invariant) hw intrinsics such as
+                    // Vector128<>.Zero and Vector256<>.AllBitSets. We might consider
+                    // doing that for Vector.Create(cns) as well.
+                    if ((argNode->gtGetOp1() == nullptr) && (argNode->gtGetOp2() == nullptr))
+                    {
+                        substitute = true;
+                    }
+                    break;
+                }
+#endif
+
+                // TODO: Enable substitution for CORINFO_HELP_TYPEHANDLE_TO_RUNTIMETYPE (typeof(T))
+                // but in order to benefit from that, we need to move various "typeof + IsValueType"
+                // optimizations from importer to morph.
+
+                default:
+                    break;
+            }
+
+            if (substitute || (!varTypeIsStruct(lclTyp) && !argInfo.argHasSideEff && !argInfo.argHasGlobRef &&
+                               !argInfo.argHasCallerLocalRef))
             {
                 /* Get a *LARGE* LCL_VAR node */
                 op1 = gtNewLclLNode(tmpNum, genActualType(lclTyp) DEBUGARG(lclNum));
