@@ -2,8 +2,8 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 
 import cwraps from "./cwraps";
-import { Module } from "./modules";
-import { VoidPtr, ManagedPointer, NativePointer } from "./types";
+import { Module } from "./imports";
+import { VoidPtr, ManagedPointer, NativePointer } from "./types/emscripten";
 
 const maxScratchRoots = 8192;
 let _scratch_root_buffer: WasmRootBuffer | null = null;
