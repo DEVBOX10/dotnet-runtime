@@ -152,10 +152,10 @@ dotnet_diagnostic.CA1064.severity = none
 dotnet_diagnostic.CA1065.severity = none
 
 # CA1066: Implement IEquatable when overriding Object.Equals
-dotnet_diagnostic.CA1066.severity = none
+dotnet_diagnostic.CA1066.severity = warning
 
 # CA1067: Override Object.Equals(object) when implementing IEquatable<T>
-dotnet_diagnostic.CA1067.severity = none
+dotnet_diagnostic.CA1067.severity = warning
 
 # CA1068: CancellationToken parameters must come last
 dotnet_diagnostic.CA1068.severity = none
@@ -306,7 +306,8 @@ dotnet_diagnostic.CA1820.severity = none
 dotnet_diagnostic.CA1821.severity = warning
 
 # CA1822: Mark members as static
-dotnet_diagnostic.CA1822.severity = none
+dotnet_diagnostic.CA1822.severity = warning
+dotnet_code_quality.CA1822.api_surface = private, internal
 
 # CA1823: Avoid unused private fields
 dotnet_diagnostic.CA1823.severity = warning
@@ -774,7 +775,7 @@ dotnet_diagnostic.CA5383.severity = none
 # CA5384: Do Not Use Digital Signature Algorithm (DSA)
 dotnet_diagnostic.CA5384.severity = warning
 
-# CA5385: Use Rivest–Shamir–Adleman (RSA) Algorithm With Sufficient Key Size
+# CA5385: Use Rivest-Shamir-Adleman (RSA) Algorithm With Sufficient Key Size
 dotnet_diagnostic.CA5385.severity = warning
 
 # CA5386: Avoid hardcoding SecurityProtocolType value
@@ -825,7 +826,7 @@ dotnet_diagnostic.CA5400.severity = none
 # CA5401: Do not use CreateEncryptor with non-default IV
 dotnet_diagnostic.CA5401.severity = none
 
-# CA5402: Use CreateEncryptor with the default IV 
+# CA5402: Use CreateEncryptor with the default IV
 dotnet_diagnostic.CA5402.severity = none
 
 # CA5403: Do not hard-code certificate
@@ -1448,6 +1449,7 @@ dotnet_diagnostic.IDE0059.severity = warning
 
 # IDE0060: Remove unused parameter
 dotnet_diagnostic.IDE0060.severity = silent
+dotnet_code_quality_unused_parameters = non_public
 
 # IDE0061: Use expression body for local functions
 dotnet_diagnostic.IDE0061.severity = silent
@@ -1538,6 +1540,9 @@ dotnet_diagnostic.IDE0160.severity = silent
 
 # IDE0161: Convert to file-scoped namespace
 dotnet_diagnostic.IDE0161.severity = silent
+
+# IDE0190: Null check can be simplified
+dotnet_diagnostic.IDE0190.severity = suggestion
 
 # IDE1005: Delegate invocation can be simplified.
 dotnet_diagnostic.IDE1005.severity = suggestion

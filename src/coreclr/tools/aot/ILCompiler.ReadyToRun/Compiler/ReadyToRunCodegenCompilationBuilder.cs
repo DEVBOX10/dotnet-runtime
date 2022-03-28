@@ -24,7 +24,6 @@ namespace ILCompiler
         private readonly IEnumerable<string> _inputFiles;
         private readonly string _compositeRootPath;
         private bool _ibcTuning;
-        private bool _resilient;
         private bool _generateMapFile;
         private bool _generateMapCsvFile;
         private bool _generatePdbFile;
@@ -114,12 +113,6 @@ namespace ILCompiler
         public ReadyToRunCodegenCompilationBuilder UseIbcTuning(bool ibcTuning)
         {
             _ibcTuning = ibcTuning;
-            return this;
-        }
-
-        public ReadyToRunCodegenCompilationBuilder UseResilience(bool resilient)
-        {
-            _resilient = resilient;
             return this;
         }
 
@@ -251,7 +244,7 @@ namespace ILCompiler
 
             factory.CompositeImageSettings = _compositeImageSettings;
 
-            IComparer<DependencyNodeCore<NodeFactory>> comparer = new SortableDependencyNode.ObjectNodeComparer(new CompilerComparer());
+            IComparer<DependencyNodeCore<NodeFactory>> comparer = new SortableDependencyNode.ObjectNodeComparer(CompilerComparer.Instance);
             DependencyAnalyzerBase<NodeFactory> graph = CreateDependencyGraph(factory, comparer);
 
             List<CorJitFlag> corJitFlags = new List<CorJitFlag> { CorJitFlag.CORJIT_FLAG_DEBUG_INFO };

@@ -1055,8 +1055,6 @@ namespace System.Xml.Xsl.Xslt
             return result;
         }
 
-        private static readonly char[] s_curlyBraces = { '{', '}' };
-
         [return: NotNullIfNotNull("avt")]
         private QilNode? CompileStringAvt(string? avt)
         {
@@ -1064,7 +1062,7 @@ namespace System.Xml.Xsl.Xslt
             {
                 return null;
             }
-            if (avt.IndexOfAny(s_curlyBraces) == -1)
+            if (avt.AsSpan().IndexOfAny('{', '}') < 0)
             {
                 return _f.String(avt);
             }
@@ -1074,7 +1072,7 @@ namespace System.Xml.Xsl.Xslt
         private QilNode CompileTextAvt(string avt)
         {
             Debug.Assert(avt != null);
-            if (avt.IndexOfAny(s_curlyBraces) == -1)
+            if (avt.AsSpan().IndexOfAny('{', '}') < 0)
             {
                 return _f.TextCtor(_f.String(avt));
             }
@@ -1108,7 +1106,7 @@ namespace System.Xml.Xsl.Xslt
             if (qilName.NodeType == QilNodeType.LiteralString)
             {
                 string name = (string)(QilLiteral)qilName;
-                _compiler.ValidatePiName(name, (IErrorHelper)this);
+                Compiler.ValidatePiName(name, (IErrorHelper)this);
             }
             return _f.PICtor(qilName, CompileInstructions(node.Content));
         }
@@ -1251,7 +1249,7 @@ namespace System.Xml.Xsl.Xslt
                 }
                 else
                 {
-                    if (!_compiler.IsPhantomName(node.Name!))
+                    if (!Compiler.IsPhantomName(node.Name!))
                     {
                         _compiler.ReportError(/*[XT0710]*/node.SourceLine!, SR.Xslt_InvalidCallTemplate, node.Name!.QualifiedName);
                     }
@@ -1286,7 +1284,7 @@ namespace System.Xml.Xsl.Xslt
             }
             else
             {
-                if (!_compiler.IsPhantomName(node.Name!))
+                if (!Compiler.IsPhantomName(node.Name!))
                 {
                     _compiler.ReportError(/*[XT0710]*/node.SourceLine!, SR.Xslt_NoAttributeSet, node.Name!.QualifiedName);
                 }
@@ -1299,7 +1297,7 @@ namespace System.Xml.Xsl.Xslt
         private QilNode CompileCopy(XslNode copy)
         {
             QilNode node = GetCurrentNode();
-            _f.CheckNodeNotRtf(node);
+            XPathQilFactory.CheckNodeNotRtf(node);
             if ((node.XmlType!.NodeKinds & InvalidatingNodes) != XmlNodeKindFlags.None)
             {
                 _outputScope.InvalidateAllPrefixes();
@@ -1827,7 +1825,7 @@ namespace System.Xml.Xsl.Xslt
             for (int i = list.Count - 1; 0 <= i; i--)
             {
                 QilLoop filter = (QilLoop)list[i];
-                _ptrnBuilder.AssertFilter(filter);
+                XPathPatternBuilder.AssertFilter(filter);
                 result = _f.Or(
                     _refReplacer.Replace(filter.Body, filter.Variable, testNode),
                     result
@@ -2488,7 +2486,7 @@ namespace System.Xml.Xsl.Xslt
 
         private QilNode ResolveQNameDynamic(bool ignoreDefaultNs, QilNode qilName)
         {
-            _f.CheckString(qilName);
+            XPathQilFactory.CheckString(qilName);
             QilList nsDecls = _f.BaseFactory.Sequence();
             if (ignoreDefaultNs)
             {
@@ -2527,7 +2525,7 @@ namespace System.Xml.Xsl.Xslt
             return InvokeApplyFunction(sheet, /*mode:*/node.Name!, node.Content);
         }
 
-        private void SetArg(IList<XslNode> args, int pos, QilName name, QilNode value)
+        private static void SetArg(IList<XslNode> args, int pos, QilName name, QilNode value)
         {
             VarPar varPar;
             if (args.Count <= pos || args[pos].Name != name)
@@ -2566,7 +2564,7 @@ namespace System.Xml.Xsl.Xslt
         // Returns true if formalArgs maps 1:1 with actual args.
         // Formaly this is n*n algorithm. We can optimize it by calculationg "signature"
         // of the function as sum of all hashes of its args names.
-        private bool FillupInvokeArgs(IList<QilNode> formalArgs, IList<XslNode> actualArgs, QilList invokeArgs)
+        private static bool FillupInvokeArgs(IList<QilNode> formalArgs, IList<XslNode> actualArgs, QilList invokeArgs)
         {
             if (actualArgs.Count != formalArgs.Count)
             {
@@ -2754,7 +2752,7 @@ namespace System.Xml.Xsl.Xslt
         private void VerifyXPathQName(QilName qname)
         {
             Debug.Assert(
-                _compiler.IsPhantomName(qname) ||
+                Compiler.IsPhantomName(qname) ||
                 qname.NamespaceUri == ResolvePrefix(/*ignoreDefaultNs:*/true, qname.Prefix),
                 "QilGenerator must resolve the prefix to the same namespace as XsltLoader"
             );
