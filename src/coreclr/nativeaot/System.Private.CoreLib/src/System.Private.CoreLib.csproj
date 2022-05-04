@@ -120,7 +120,6 @@
   <ItemGroup>
     <Compile Include="System\Reflection\RuntimeAssembly.cs" />
     <Compile Include="System\Reflection\RuntimeAssemblyName.cs" />
-    <Compile Include="System\Reflection\AssemblyNameHelpers.cs" />
     <Compile Include="System\Reflection\AssemblyRuntimeNameHelpers.cs" />
     <Compile Include="System\Reflection\Attribute.CoreRT.cs" />
     <Compile Include="System\Reflection\Assembly.CoreRT.cs" />
@@ -169,7 +168,7 @@
     <Compile Include="System\Diagnostics\StackTrace.CoreRT.cs" />
     <Compile Include="System\Enum.CoreRT.cs" />
     <Compile Include="System\Environment.CoreRT.cs" />
-    <Compile Include="System\GC.cs" />
+    <Compile Include="System\GC.CoreRT.cs" />
     <Compile Include="System\Helpers.cs" />
     <Compile Include="System\Math.CoreRT.cs" />
     <Compile Include="System\MathF.CoreRT.cs" />

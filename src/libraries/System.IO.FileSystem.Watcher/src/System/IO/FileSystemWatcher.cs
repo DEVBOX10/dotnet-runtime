@@ -370,8 +370,10 @@ namespace System.IO
             }
         }
 
-        private static void CheckPathValidity(string path!!)
+        private static void CheckPathValidity(string path)
         {
+            ArgumentNullException.ThrowIfNull(path);
+
             // Early check for directory parameter so that an exception can be thrown as early as possible.
             if (path.Length == 0)
                 throw new ArgumentException(SR.Format(SR.InvalidDirName, path), nameof(path));
@@ -616,6 +618,19 @@ namespace System.IO
             return tcs.Task.IsCompletedSuccessfully ?
                 tcs.Task.Result :
                 WaitForChangedResult.TimedOutResult;
+        }
+
+        public WaitForChangedResult WaitForChanged(WatcherChangeTypes changeType, TimeSpan timeout) =>
+            WaitForChanged(changeType, ToTimeoutMilliseconds(timeout));
+
+        private static int ToTimeoutMilliseconds(TimeSpan timeout)
+        {
+            long totalMilliseconds = (long)timeout.TotalMilliseconds;
+            if (totalMilliseconds < -1 || totalMilliseconds > int.MaxValue)
+            {
+                throw new ArgumentOutOfRangeException(nameof(timeout));
+            }
+            return (int)totalMilliseconds;
         }
 
         /// <devdoc>
