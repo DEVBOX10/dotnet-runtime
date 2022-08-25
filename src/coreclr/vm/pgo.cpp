@@ -20,7 +20,7 @@
 //
 // In the current implementation, the method stable hash code isn't a good replacement for "token" as it doesn't
 // carry any detail about signatures, and is probably quite slow to compute
-// The plan is to swap over to the typenamehash 
+// The plan is to swap over to the typenamehash
 
 // Goals
 // 1. Need to be able to walk at any time.
@@ -122,7 +122,7 @@ public:
 
         auto thProcessor = [&](intptr_t thWritten)
         {
-            if (thWritten == 0 || ICorJitInfo::IsUnknownHandle(thWritten))
+            if (thWritten == 0 || ICorJitInfo::IsUnknownHandle((intptr_t)thWritten))
                 return;
 
             TypeHandle th = *(TypeHandle*)&thWritten;
@@ -152,6 +152,14 @@ public:
 };
 
 #ifndef DACCESS_COMPILE
+
+void CallFClose(FILE* file)
+{
+    fclose(file);
+}
+
+typedef Holder<FILE*, DoNothing, CallFClose> FILEHolder;
+
 void PgoManager::WritePgoData()
 {
     if (ETW_EVENT_ENABLED(MICROSOFT_WINDOWS_DOTNETRUNTIME_PROVIDER_DOTNET_Context, JitInstrumentationDataVerbose))
@@ -204,6 +212,8 @@ void PgoManager::WritePgoData()
         return;
     }
 
+    FILEHolder fileHolder(pgoDataFile);
+
     fprintf(pgoDataFile, s_FileHeaderString, pgoDataCount);
 
     EnumeratePGOHeaders([pgoDataFile](HeaderList *pgoData)
@@ -220,10 +230,8 @@ void PgoManager::WritePgoData()
         SString tClass, tMethodName, tMethodSignature;
         pgoData->header.method->GetMethodInfo(tClass, tMethodName, tMethodSignature);
 
-        StackScratchBuffer nameBuffer;
-        StackScratchBuffer nameBuffer2;
-        fprintf(pgoDataFile, "MethodName: %s.%s\n", tClass.GetUTF8(nameBuffer), tMethodName.GetUTF8(nameBuffer2));
-        fprintf(pgoDataFile, "Signature: %s\n", tMethodSignature.GetUTF8(nameBuffer));
+        fprintf(pgoDataFile, "MethodName: %s.%s\n", tClass.GetUTF8(), tMethodName.GetUTF8());
+        fprintf(pgoDataFile, "Signature: %s\n", tMethodSignature.GetUTF8());
 
         uint8_t* data = pgoData->header.GetData();
 
@@ -244,25 +252,24 @@ void PgoManager::WritePgoData()
                         fprintf(pgoDataFile, s_FourByte, (unsigned)*(uint32_t*)(data + entryOffset));
                         break;
                     case ICorJitInfo::PgoInstrumentationKind::EightByte:
-                        // Print a pair of 4 byte values as the PRIu64 specifier isn't generally avaialble
+                        // Print a pair of 4 byte values as the PRIu64 specifier isn't generally available
                         fprintf(pgoDataFile, s_EightByte, (unsigned)*(uint32_t*)(data + entryOffset), (unsigned)*(uint32_t*)(data + entryOffset + 4));
                         break;
                     case ICorJitInfo::PgoInstrumentationKind::TypeHandle:
                         {
-                            intptr_t typehandleData = *(intptr_t*)(data + entryOffset);
-                            TypeHandle th = TypeHandle::FromPtr((void*)typehandleData);
-                            if (th.IsNull())
+                            intptr_t thData = *(intptr_t*)(data + entryOffset);
+                            if (thData == 0)
                             {
                                 fprintf(pgoDataFile, s_TypeHandle, "NULL");
                             }
-                            else if (ICorJitInfo::IsUnknownHandle(typehandleData))
+                            else if (ICorJitInfo::IsUnknownHandle(thData))
                             {
                                 fprintf(pgoDataFile, s_TypeHandle, "UNKNOWN");
                             }
                             else
                             {
+                                TypeHandle th = TypeHandle::FromPtr((void*)thData);
                                 StackSString ss;
-                                StackScratchBuffer nameBuffer;
                                 TypeString::AppendType(ss, th, TypeString::FormatNamespace | TypeString::FormatFullInst | TypeString::FormatAssembly);
                                 if (ss.GetCount() > 8192)
                                 {
@@ -270,25 +277,25 @@ void PgoManager::WritePgoData()
                                 }
                                 else
                                 {
-                                    fprintf(pgoDataFile, s_TypeHandle, ss.GetUTF8(nameBuffer));
+                                    fprintf(pgoDataFile, s_TypeHandle, ss.GetUTF8());
                                 }
                             }
                             break;
                         }
                     case ICorJitInfo::PgoInstrumentationKind::MethodHandle:
                         {
-                            intptr_t methodHandleData = *(intptr_t*)(data + entryOffset);
-                            MethodDesc* md = reinterpret_cast<MethodDesc*>(methodHandleData);
-                            if (md == nullptr)
+                            intptr_t mdData = *(intptr_t*)(data + entryOffset);
+                            if (mdData == 0)
                             {
-                                fprintf(pgoDataFile, "MethodHandle: NULL");
+                                fprintf(pgoDataFile, "MethodHandle: NULL\n");
                             }
-                            else if (ICorJitInfo::IsUnknownHandle(methodHandleData))
+                            else if (ICorJitInfo::IsUnknownHandle(mdData))
                             {
-                                fprintf(pgoDataFile, "MethodHandle: UNKNOWN");
+                                fprintf(pgoDataFile, "MethodHandle: UNKNOWN\n");
                             }
                             else
                             {
+                                MethodDesc* md = reinterpret_cast<MethodDesc*>(mdData);
                                 SString garbage1, tMethodName, garbage2;
                                 md->GetMethodInfo(garbage1, tMethodName, garbage2);
                                 StackSString tTypeName;
@@ -297,13 +304,11 @@ void PgoManager::WritePgoData()
                                 // MethodName|@|fully_qualified_type_name
                                 if (tTypeName.GetCount() + 1 + tMethodName.GetCount() > 8192)
                                 {
-                                    fprintf(pgoDataFile, "MethodHandle: UNKNOWN");
+                                    fprintf(pgoDataFile, "MethodHandle: UNKNOWN\n");
                                 }
                                 else
                                 {
-                                    StackScratchBuffer methodNameBuffer;
-                                    StackScratchBuffer typeBuffer;
-                                    fprintf(pgoDataFile, "MethodHandle: %s|@|%s", tMethodName.GetUTF8(methodNameBuffer), tTypeName.GetUTF8(typeBuffer));
+                                    fprintf(pgoDataFile, "MethodHandle: %s|@|%s\n", tMethodName.GetUTF8(), tTypeName.GetUTF8());
                                 }
                             }
                             break;
@@ -324,7 +329,6 @@ void PgoManager::WritePgoData()
     });
 
     fprintf(pgoDataFile, s_FileTrailerString);
-    fclose(pgoDataFile);
 }
 #endif // DACCESS_COMPILE
 
@@ -336,7 +340,7 @@ void ReadLineAndDiscard(FILE* file)
         auto stringLen = strlen(buffer);
         if (stringLen == 0)
             return;
-        
+
         if (buffer[stringLen - 1] == '\n')
         {
             return;
@@ -349,8 +353,8 @@ void PgoManager::ReadPgoData()
 {
     // Skip, if we're not reading, or we're writing profile data, or doing tiered pgo
     //
-    if ((CLRConfig::GetConfigValue(CLRConfig::INTERNAL_WritePGOData) > 0) ||
-        (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_TieredPGO) > 0) ||
+    if (g_pConfig->TieredPGO() ||
+        (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_WritePGOData) > 0) ||
         (CLRConfig::GetConfigValue(CLRConfig::INTERNAL_ReadPGOData) == 0))
     {
         return;
@@ -369,6 +373,8 @@ void PgoManager::ReadPgoData()
     {
         return;
     }
+
+    FILEHolder fileHolder(pgoDataFile);
 
     char     buffer[16384];
     unsigned maxIndex = 0;
@@ -432,7 +438,7 @@ void PgoManager::ReadPgoData()
 
             // Read schema
             ICorJitInfo::PgoInstrumentationSchema schema;
-            
+
             if (sscanf_s(buffer, s_RecordString, &schema.InstrumentationKind, &schema.ILOffset, &schema.Count, &schema.Other) != 4)
             {
                 failed = true;
@@ -719,7 +725,7 @@ HRESULT PgoManager::allocPgoInstrumentationBySchemaInstance(MethodDesc* pMD,
     }
 
     S_SIZE_T allocationSize = S_SIZE_T(sizeof(HeaderList)) + S_SIZE_T(pSchema[countSchemaItems - 1].Offset) + S_SIZE_T(pSchema[countSchemaItems - 1].Count) * S_SIZE_T(InstrumentationKindToSize(pSchema[countSchemaItems - 1].InstrumentationKind));
-    
+
     if (allocationSize.IsOverflow())
     {
         return E_NOTIMPL;
@@ -871,8 +877,11 @@ HRESULT PgoManager::getPgoInstrumentationResults(MethodDesc* pMD, BYTE** pAlloca
                                                     TypeHandle th = TypeName::GetTypeManaged(typeString.GetUnicode(), NULL, FALSE, FALSE, FALSE, NULL, NULL);
                                                     if (!th.IsNull())
                                                     {
-                                                        MethodDesc* pMD = MemberLoader::FindMethodByName(th.GetMethodTable(), methodString.GetUTF8NoConvert());
-                                                        newPtr = (INT_PTR)pMD;
+                                                        MethodDesc* pMD = MemberLoader::FindMethodByName(th.GetMethodTable(), methodString.GetUTF8());
+                                                        if (pMD != nullptr && !pMD->IsGenericMethodDefinition())
+                                                        {
+                                                            newPtr = (INT_PTR)pMD;
+                                                        }
                                                     }
                                                 }
                                             }
@@ -976,7 +985,7 @@ public:
                     if (importSection != 0xF)
                     {
                         COUNT_T countImportSections;
-                        PTR_CORCOMPILE_IMPORT_SECTION pImportSections = m_pReadyToRunInfo->GetImportSections(&countImportSections);
+                        PTR_READYTORUN_IMPORT_SECTION pImportSections = m_pReadyToRunInfo->GetImportSections(&countImportSections);
 
                         if (importSection >= countImportSections)
                         {
@@ -984,7 +993,7 @@ public:
                             return false;
                         }
 
-                        PTR_CORCOMPILE_IMPORT_SECTION pImportSection = &pImportSections[importSection];
+                        PTR_READYTORUN_IMPORT_SECTION pImportSection = &pImportSections[importSection];
                         COUNT_T cbData;
                         TADDR pData = m_pNativeImage->GetDirectoryData(&pImportSection->Section, &cbData);
                         uint32_t fixupIndex = (uint32_t)typeIndex;
@@ -1135,7 +1144,7 @@ HRESULT PgoManager::getPgoInstrumentationResultsInstance(MethodDesc* pMD, BYTE**
         *pCountSchemaItems = schemaArray.GetCount();
         memcpy(*pAllocatedData, schemaArray.OpenRawBuffer(), schemaDataSize);
         schemaArray.CloseRawBuffer();
-        
+
         size_t* pInstrumentationDataDst = (size_t*)((*pAllocatedData) + schemaDataSize);
         size_t* pInstrumentationDataDstEnd = (size_t*)((*pAllocatedData) + schemaDataSize + instrumentationDataSize);
         *pInstrumentationData = (BYTE*)pInstrumentationDataDst;

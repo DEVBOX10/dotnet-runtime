@@ -93,11 +93,11 @@ namespace TypeSystemTests
 
         public static IEnumerable<object[]> GetTargetDetails()
         {
-            yield return new object[] { new TargetDetails(TargetArchitecture.ARM, TargetOS.Unknown, TargetAbi.CoreRT) };
-            yield return new object[] { new TargetDetails(TargetArchitecture.ARM64, TargetOS.Unknown, TargetAbi.CoreRT) };
-            yield return new object[] { new TargetDetails(TargetArchitecture.X64, TargetOS.Unknown, TargetAbi.CoreRT) };
-            yield return new object[] { new TargetDetails(TargetArchitecture.X86, TargetOS.Unknown, TargetAbi.CoreRT) };
-            yield return new object[] { new TargetDetails(TargetArchitecture.Wasm32, TargetOS.Unknown, TargetAbi.CoreRT) };
+            yield return new object[] { new TargetDetails(TargetArchitecture.ARM, TargetOS.Unknown, TargetAbi.NativeAot) };
+            yield return new object[] { new TargetDetails(TargetArchitecture.ARM64, TargetOS.Unknown, TargetAbi.NativeAot) };
+            yield return new object[] { new TargetDetails(TargetArchitecture.X64, TargetOS.Unknown, TargetAbi.NativeAot) };
+            yield return new object[] { new TargetDetails(TargetArchitecture.X86, TargetOS.Unknown, TargetAbi.NativeAot) };
+            yield return new object[] { new TargetDetails(TargetArchitecture.Wasm32, TargetOS.Unknown, TargetAbi.NativeAot) };
         }
 
         [Theory]
@@ -372,6 +372,7 @@ namespace TypeSystemTests
             AssertClassIndeterminateSize(context, genOfUL, expectedIndeterminateByteAlignment);
         }
 
+        /* This test exercises universal shared generic layout that is currently unsupported and known to be buggy.
         [Fact]
         public void TestClassLayout()
         {
@@ -511,5 +512,6 @@ namespace TypeSystemTests
             Assert.Equal(LayoutInt.Indeterminate, genOfUI.GetFields().First().Offset);
             Assert.Equal(LayoutInt.Indeterminate, genOfUL.GetFields().First().Offset);
         }
+        */
     }
 }
