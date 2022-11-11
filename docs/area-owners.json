@@ -58,6 +58,7 @@
         "clamp03",
         "gbalykov",
         "hjleee",
+        "JongHeonChoi",
         "wscho77"
       ],
       "label": "os-tizen"
@@ -97,7 +98,6 @@
     {
       "lead": "dotnet/dnr-codeflow",
       "owners": [
-        "danmoseley",
         "jeffschwMSFT",
         "marek-safar",
         "dotnet/dnr-codeflow"
@@ -206,12 +206,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-dependencymodel"
       ],
@@ -248,12 +248,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-extensions-caching"
       ],
@@ -261,12 +261,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-extensions-configuration"
       ],
@@ -274,12 +274,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-extensions-dependencyinjection"
       ],
@@ -290,7 +290,6 @@
       "pod": "adam-david",
       "owners": [
         "adamsitnik",
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "Jozkee",
@@ -301,12 +300,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-extensions-hosting"
       ],
@@ -331,12 +330,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-extensions-logging"
       ],
@@ -344,12 +343,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-extensions-options"
       ],
@@ -357,12 +356,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-extensions-primitives"
       ],
@@ -495,10 +494,9 @@
       "label": "area-Interop-mono"
     },
     {
-      "lead": "danmoseley",
+      "lead": "jeffhandley",
       "pod": "eric-jeff",
       "owners": [
-        "danmoseley",
         "ericstj",
         "jeffhandley",
         "dotnet/area-meta"
@@ -645,12 +643,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-system-componentmodel"
       ],
@@ -658,12 +656,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-system-componentmodel-composition"
       ],
@@ -679,12 +677,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-system-composition"
       ],
@@ -772,7 +770,6 @@
     {
       "lead": "tommcdon",
       "owners": [
-        "eerhardt",
         "maryamariyan",
         "tarekgh"
       ],
@@ -906,12 +903,12 @@
     },
     {
       "lead": "ericstj",
-      "pod": "eric-maryam-tarek",
+      "pod": "maryam-nick-tarek",
       "owners": [
-        "eerhardt",
         "ericstj",
         "jeffhandley",
         "maryamariyan",
+        "Nick-Stanton",
         "tarekgh",
         "dotnet/area-system-globalization"
       ],
@@ -942,11 +939,10 @@
       "label": "area-System.IO.Compression"
     },
     {
-      "lead": "kevinpi",
+      "lead": "adityamandaleeka",
       "owners": [
         "davidfowl",
-        "halter73",
-        "jkotalik"
+        "halter73"
       ],
       "label": "area-System.IO.Pipelines"
     },
@@ -1285,9 +1281,10 @@
       "label": "area-System.ServiceProcess"
     },
     {
-      "lead": "danmoseley",
+      "lead": "jeffhandley",
       "owners": [
-        "danmoseley"
+        "ericstj",
+        "jeffhandley"
       ],
       "label": "area-System.Speech"
     },
@@ -1390,7 +1387,8 @@
     {
       "lead": "HongGit",
       "owners": [
-        "HongGit"
+        "HongGit",
+        "roji"
       ],
       "label": "area-System.Transactions"
     },

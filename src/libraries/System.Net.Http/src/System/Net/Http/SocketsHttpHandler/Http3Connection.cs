@@ -7,7 +7,6 @@ using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
 using System.Net.Quic;
 using System.IO;
-using System.Linq;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
@@ -155,7 +154,7 @@ namespace System.Net.Http
 
                     if (_clientControl != null)
                     {
-                        _clientControl.Dispose();
+                        await _clientControl.DisposeAsync().ConfigureAwait(false);
                         _clientControl = null;
                     }
 
@@ -245,7 +244,10 @@ namespace System.Net.Http
             }
             finally
             {
-                requestStream?.Dispose();
+                if (requestStream is not null)
+                {
+                    await requestStream.DisposeAsync().ConfigureAwait(false);
+                }
             }
         }
 
@@ -562,7 +564,6 @@ namespace System.Net.Http
                             }
 
                             stream.Abort(QuicAbortDirection.Read, (long)Http3ErrorCode.StreamCreationError);
-                            stream.Dispose();
                             return;
                     }
                 }
@@ -647,7 +648,7 @@ namespace System.Net.Http
                                 }
                                 return;
                             default:
-                                await SkipUnknownPayloadAsync(frameType.GetValueOrDefault(), payloadLength).ConfigureAwait(false);
+                                await SkipUnknownPayloadAsync(payloadLength).ConfigureAwait(false);
                                 break;
                         }
                     }
@@ -771,7 +772,7 @@ namespace System.Net.Http
                 OnServerGoAway(firstRejectedStreamId);
             }
 
-            async ValueTask SkipUnknownPayloadAsync(Http3FrameType frameType, long payloadLength)
+            async ValueTask SkipUnknownPayloadAsync(long payloadLength)
             {
                 while (payloadLength != 0)
                 {

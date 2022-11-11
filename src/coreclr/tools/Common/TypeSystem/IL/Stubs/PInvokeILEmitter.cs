@@ -134,7 +134,6 @@ namespace Internal.IL.Stubs
                 {
                     marshallers[i] = Marshaller.CreateDisabledMarshaller(
                         parameterType,
-                        parameterIndex,
                         MarshallerType.Argument,
                         direction,
                         marshallers,
@@ -444,7 +443,7 @@ namespace Internal.IL.Stubs
             }
             catch (InvalidProgramException ex)
             {
-                Debug.Assert(!String.IsNullOrEmpty(ex.Message));
+                Debug.Assert(!string.IsNullOrEmpty(ex.Message));
                 return MarshalHelpers.EmitExceptionBody(ex.Message, method);
             }
         }
