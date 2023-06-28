@@ -97,11 +97,11 @@ namespace ILCompiler.Reflection.ReadyToRun
         // Header
         private OperatingSystem _operatingSystem;
         private Machine _machine;
-        private Architecture _architecture;
         private int _pointerSize;
         private bool _composite;
         private ulong _imageBase;
         private int _readyToRunHeaderRVA;
+        private string _ownerCompositeExecutable;
         private ReadyToRunHeader _readyToRunHeader;
         private List<ReadyToRunCoreHeader> _readyToRunAssemblyHeaders;
         private List<ReadyToRunAssembly> _readyToRunAssemblies;
@@ -192,18 +192,6 @@ namespace ILCompiler.Reflection.ReadyToRun
         }
 
         /// <summary>
-        /// Targeting processor architecture of the R2R executable
-        /// </summary>
-        public Architecture Architecture
-        {
-            get
-            {
-                EnsureHeader();
-                return _architecture;
-            }
-        }
-
-        /// <summary>
         /// Size of a pointer on the architecture
         /// </summary>
         public int TargetPointerSize
@@ -285,6 +273,15 @@ namespace ILCompiler.Reflection.ReadyToRun
             }
         }
 
+        public string OwnerCompositeExecutable
+        {
+            get
+            {
+                EnsureHeader();
+                return _ownerCompositeExecutable;
+            }
+        }
+
         /// <summary>
         /// Parsed instance entrypoint table entries.
         /// </summary>
@@ -333,6 +330,8 @@ namespace ILCompiler.Reflection.ReadyToRun
             }
 
         }
+
+        public bool ValidateDebugInfo;
 
         internal Dictionary<int, int> RuntimeFunctionToDebugInfo
         {
@@ -625,29 +624,15 @@ namespace ILCompiler.Reflection.ReadyToRun
             switch (_machine)
             {
                 case Machine.I386:
-                    _architecture = Architecture.X86;
+                case Machine.Arm:
+                case Machine.Thumb:
+                case Machine.ArmThumb2:
                     _pointerSize = 4;
                     break;
 
                 case Machine.Amd64:
-                    _architecture = Architecture.X64;
-                    _pointerSize = 8;
-                    break;
-
-                case Machine.Arm:
-                case Machine.Thumb:
-                case Machine.ArmThumb2:
-                    _architecture = Architecture.Arm;
-                    _pointerSize = 4;
-                    break;
-
                 case Machine.Arm64:
-                    _architecture = Architecture.Arm64;
-                    _pointerSize = 8;
-                    break;
-
-                case (Machine)0x6264: /* LoongArch64 */
-                    _architecture = (Architecture)6; /* LoongArch64 */
+                case Machine.LoongArch64:
                     _pointerSize = 8;
                     break;
 
@@ -655,13 +640,14 @@ namespace ILCompiler.Reflection.ReadyToRun
                     throw new NotImplementedException(Machine.ToString());
             }
 
-
             _imageBase = CompositeReader.PEHeaders.PEHeader.ImageBase;
 
             // Initialize R2RHeader
             Debug.Assert(_readyToRunHeaderRVA != 0);
             int r2rHeaderOffset = GetOffset(_readyToRunHeaderRVA);
             _readyToRunHeader = new ReadyToRunHeader(Image, _readyToRunHeaderRVA, r2rHeaderOffset);
+
+            FindOwnerCompositeExecutable();
 
             _readyToRunAssemblies = new List<ReadyToRunAssembly>();
             if (_composite)
@@ -1180,12 +1166,19 @@ namespace ILCompiler.Reflection.ReadyToRun
             {
                 hashPersonalityRoutines.Add(x64UnwindInfo.PersonalityRoutineRVA);
             }
+            if (ValidateDebugInfo)
+            {
+                CheckNonEmptyDebugInfo(firstRuntimeFunction);
+            }
 
             for (int i = 1; i < runtimeFunctions.Count; i++)
             {
                 Debug.Assert(runtimeFunctions[i - 1].StartAddress.CompareTo(runtimeFunctions[i].StartAddress) < 0, "RuntimeFunctions are not sorted");
                 Debug.Assert(runtimeFunctions[i - 1].EndAddress <= runtimeFunctions[i].StartAddress, "RuntimeFunctions intervals overlap");
-
+                if (ValidateDebugInfo)
+                {
+                    CheckNonEmptyDebugInfo(runtimeFunctions[i - 1]);
+                }
                 if (x64UnwindInfo != null && ((x64UnwindInfo.Flags & (int)ILCompiler.Reflection.ReadyToRun.Amd64.UnwindFlags.UNW_FLAG_CHAININFO) == 0))
                 {
                     Amd64.UnwindInfo x64UnwindInfoCurr = (Amd64.UnwindInfo)runtimeFunctions[i].UnwindInfo;
@@ -1196,6 +1189,17 @@ namespace ILCompiler.Reflection.ReadyToRun
                         hashPersonalityRoutines.Add(currPersonalityRoutineRVA);
                         Debug.Assert(hashPersonalityRoutines.Count < 3, "There are more than two different runtimefunctions PersonalityRVAs");
                     }
+                }
+            }
+        }
+
+        public void CheckNonEmptyDebugInfo(RuntimeFunction function)
+        {
+            if (function.DebugInfo != null)
+            {
+                foreach (NativeVarInfo varInfo in function.DebugInfo.VariablesList)
+                {
+                    Debug.Assert(varInfo.StartOffset < varInfo.EndOffset, "Empty debug info for Variable " + varInfo.VariableNumber + " in " + function.Method.Signature);
                 }
             }
         }
@@ -1359,6 +1363,21 @@ namespace ILCompiler.Reflection.ReadyToRun
             }
         }
 
+        private void FindOwnerCompositeExecutable()
+        {
+            _ownerCompositeExecutable = null;
+            foreach (ReadyToRunSection section in ReadyToRunHeader.Sections.Values)
+            {
+                if (section.Type == ReadyToRunSectionType.OwnerCompositeExecutable)
+                {
+                    int oceOffset = GetOffset(section.RelativeVirtualAddress);
+                    string ownerCompositeExecutable = Encoding.UTF8.GetString(Image, oceOffset, section.Size - 1); // exclude the zero terminator
+                    _ownerCompositeExecutable = ownerCompositeExecutable.ToEscapedString(placeQuotes: false);
+                    break;
+                }
+            }
+        }
+
         /// <summary>
         /// based on <a href="https://github.com/dotnet/coreclr/blob/master/src/zap/zapimport.cpp">ZapImportSectionsTable::Save</a>
         /// </summary>
@@ -1396,6 +1415,7 @@ namespace ILCompiler.Reflection.ReadyToRun
 
                         case Machine.Amd64:
                         case Machine.Arm64:
+                        case Machine.LoongArch64:
                             entrySize = 8;
                             break;
 

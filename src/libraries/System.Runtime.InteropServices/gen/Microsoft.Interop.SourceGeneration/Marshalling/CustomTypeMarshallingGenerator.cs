@@ -15,12 +15,12 @@ namespace Microsoft.Interop
     internal sealed class CustomTypeMarshallingGenerator : IMarshallingGenerator
     {
         private readonly ICustomTypeMarshallingStrategy _nativeTypeMarshaller;
-        private readonly bool _enableByValueContentsMarshalling;
+        private readonly ByValueMarshalKindSupport _byValueContentsMarshallingSupport;
 
-        public CustomTypeMarshallingGenerator(ICustomTypeMarshallingStrategy nativeTypeMarshaller, bool enableByValueContentsMarshalling)
+        public CustomTypeMarshallingGenerator(ICustomTypeMarshallingStrategy nativeTypeMarshaller, ByValueMarshalKindSupport byValueContentsMarshallingSupport)
         {
             _nativeTypeMarshaller = nativeTypeMarshaller;
-            _enableByValueContentsMarshalling = enableByValueContentsMarshalling;
+            _byValueContentsMarshallingSupport = byValueContentsMarshallingSupport;
         }
 
         public bool IsSupported(TargetFramework target, Version version)
@@ -33,7 +33,7 @@ namespace Microsoft.Interop
             return info.IsByRef ? ValueBoundaryBehavior.AddressOfNativeIdentifier : ValueBoundaryBehavior.NativeIdentifier;
         }
 
-        public TypeSyntax AsNativeType(TypePositionInfo info)
+        public ManagedTypeInfo AsNativeType(TypePositionInfo info)
         {
             return _nativeTypeMarshaller.AsNativeType(info);
         }
@@ -45,6 +45,7 @@ namespace Microsoft.Interop
 
         public IEnumerable<StatementSyntax> Generate(TypePositionInfo info, StubCodeContext context)
         {
+            MarshalDirection elementMarshalDirection = MarshallerHelpers.GetMarshalDirection(info, context);
             // Although custom native type marshalling doesn't support [In] or [Out] by value marshalling,
             // other marshallers that wrap this one might, so we handle the correct cases here.
             switch (context.CurrentStage)
@@ -52,46 +53,46 @@ namespace Microsoft.Interop
                 case StubCodeContext.Stage.Setup:
                     return _nativeTypeMarshaller.GenerateSetupStatements(info, context);
                 case StubCodeContext.Stage.Marshal:
-                    if (!info.IsManagedReturnPosition && info.RefKind != RefKind.Out)
+                    if (elementMarshalDirection is MarshalDirection.ManagedToUnmanaged or MarshalDirection.Bidirectional
+                        || (context.Direction == MarshalDirection.UnmanagedToManaged && ShouldGenerateByValueOutMarshalling(info)))
                     {
                         return _nativeTypeMarshaller.GenerateMarshalStatements(info, context);
                     }
                     break;
                 case StubCodeContext.Stage.Pin:
-                    if (!info.IsByRef || info.RefKind == RefKind.In)
+                    if (context.SingleFrameSpansNativeContext && elementMarshalDirection is MarshalDirection.ManagedToUnmanaged)
                     {
                         return _nativeTypeMarshaller.GeneratePinStatements(info, context);
                     }
                     break;
                 case StubCodeContext.Stage.PinnedMarshal:
-                    if (!info.IsManagedReturnPosition && info.RefKind != RefKind.Out)
+                    if (elementMarshalDirection is MarshalDirection.ManagedToUnmanaged or MarshalDirection.Bidirectional)
                     {
                         return _nativeTypeMarshaller.GeneratePinnedMarshalStatements(info, context);
                     }
                     break;
                 case StubCodeContext.Stage.NotifyForSuccessfulInvoke:
-                    if (!info.IsManagedReturnPosition && info.RefKind != RefKind.Out)
+                    if (elementMarshalDirection is MarshalDirection.ManagedToUnmanaged or MarshalDirection.Bidirectional)
                     {
                         return _nativeTypeMarshaller.GenerateNotifyForSuccessfulInvokeStatements(info, context);
                     }
                     break;
                 case StubCodeContext.Stage.UnmarshalCapture:
-                    if (info.IsManagedReturnPosition || (info.IsByRef && info.RefKind != RefKind.In))
+                    if (elementMarshalDirection is MarshalDirection.UnmanagedToManaged or MarshalDirection.Bidirectional)
                     {
                         return _nativeTypeMarshaller.GenerateUnmarshalCaptureStatements(info, context);
                     }
                     break;
                 case StubCodeContext.Stage.Unmarshal:
-                    if (info.IsManagedReturnPosition || (info.IsByRef && info.RefKind != RefKind.In)
-                        || (_enableByValueContentsMarshalling && !info.IsByRef && info.ByValueContentsMarshalKind.HasFlag(ByValueContentsMarshalKind.Out)))
+                    if (elementMarshalDirection is MarshalDirection.UnmanagedToManaged or MarshalDirection.Bidirectional
+                        || (context.Direction == MarshalDirection.ManagedToUnmanaged && ShouldGenerateByValueOutMarshalling(info)))
                     {
                         return _nativeTypeMarshaller.GenerateUnmarshalStatements(info, context);
                     }
                     break;
                 case StubCodeContext.Stage.GuaranteedUnmarshal:
-                    if (info.IsManagedReturnPosition
-                        || (info.IsByRef && info.RefKind != RefKind.In)
-                        || (_enableByValueContentsMarshalling && !info.IsByRef && info.ByValueContentsMarshalKind.HasFlag(ByValueContentsMarshalKind.Out)))
+                    if (elementMarshalDirection is MarshalDirection.UnmanagedToManaged or MarshalDirection.Bidirectional
+                        || (context.Direction == MarshalDirection.ManagedToUnmanaged && ShouldGenerateByValueOutMarshalling(info)))
                     {
                         return _nativeTypeMarshaller.GenerateGuaranteedUnmarshalStatements(info, context);
                     }
@@ -105,9 +106,14 @@ namespace Microsoft.Interop
             return Array.Empty<StatementSyntax>();
         }
 
-        public bool SupportsByValueMarshalKind(ByValueContentsMarshalKind marshalKind, StubCodeContext context)
+        private bool ShouldGenerateByValueOutMarshalling(TypePositionInfo info)
         {
-            return _enableByValueContentsMarshalling;
+            return _byValueContentsMarshallingSupport == ByValueMarshalKindSupport.Supported && !info.IsByRef && info.ByValueContentsMarshalKind.HasFlag(ByValueContentsMarshalKind.Out);
+        }
+
+        public ByValueMarshalKindSupport SupportsByValueMarshalKind(ByValueContentsMarshalKind marshalKind, StubCodeContext context)
+        {
+            return _byValueContentsMarshallingSupport;
         }
 
         public bool UsesNativeIdentifier(TypePositionInfo info, StubCodeContext context)

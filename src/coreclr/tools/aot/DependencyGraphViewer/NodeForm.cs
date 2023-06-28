@@ -3,20 +3,14 @@
 
 using System;
 using System.Collections.Generic;
-using System.ComponentModel;
-using System.Data;
-using System.Drawing;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using System.Windows.Forms;
 
 namespace DependencyLogViewer
 {
     public partial class NodeForm : Form
     {
-        Graph _graph;
-        Node _node;
+        private readonly Graph _graph;
+        private readonly Node _node;
 
         public NodeForm(Graph g, Node n)
         {
@@ -30,13 +24,13 @@ namespace DependencyLogViewer
 
             lock (GraphCollection.Singleton)
             {
-                List<BoxDisplay> sourceNodes = new ();
+                List<BoxDisplay> sourceNodes = new();
                 foreach (var pair in _node.Sources)
                 {
                     sourceNodes.Add(new BoxDisplay(pair.Key, pair.Value));
                 }
 
-                List<BoxDisplay> targetNodes = new ();
+                List<BoxDisplay> targetNodes = new();
                 foreach (var pair in _node.Targets)
                 {
                     targetNodes.Add(new BoxDisplay(pair.Key, pair.Value));
@@ -72,22 +66,6 @@ namespace DependencyLogViewer
         {
             string dMessage = "Dependent nodes depend on the current node. The current node depends on the dependees.";
             MessageBox.Show(dMessage);
-        }
-    }
-    public class BoxDisplay
-    {
-        public Node node;
-        public List<string> reason;
-
-        public BoxDisplay(Node node, List<string> reason)
-        {
-            this.node = node;
-            this.reason = reason;
-        }
-
-        public override string ToString()
-        {
-            return $"Index: {node.Index}, Name: {node.Name}, {reason.Count} Reason(s): {String.Join(", ", reason.ToArray())}";
         }
     }
 }

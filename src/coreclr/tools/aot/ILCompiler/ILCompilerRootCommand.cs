@@ -5,9 +5,6 @@ using System;
 using System.Collections.Generic;
 using System.CommandLine;
 using System.CommandLine.Help;
-using System.CommandLine.Parsing;
-using System.IO;
-using System.Runtime.InteropServices;
 
 using Internal.TypeSystem;
 
@@ -24,17 +21,21 @@ namespace ILCompiler
         public Option<bool> Optimize { get; } =
             new(new[] { "--optimize", "-O" }, "Enable optimizations");
         public Option<bool> OptimizeSpace { get; } =
-            new(new[] { "--optimize-space", "-Os" }, "Enable optimizations, favor code space");
+            new(new[] { "--optimize-space", "--Os" }, "Enable optimizations, favor code space");
         public Option<bool> OptimizeTime { get; } =
-            new(new[] { "--optimize-time", "-Ot" }, "Enable optimizations, favor code speed");
+            new(new[] { "--optimize-time", "--Ot" }, "Enable optimizations, favor code speed");
         public Option<string[]> MibcFilePaths { get; } =
             new(new[] { "--mibc", "-m" }, Array.Empty<string>, "Mibc file(s) for profile guided optimization");
+        public Option<string[]> SatelliteFilePaths { get; } =
+            new(new[] { "--satellite" }, Array.Empty<string>, "Satellite assemblies associated with inputs/references");
         public Option<bool> EnableDebugInfo { get; } =
             new(new[] { "--debug", "-g" }, "Emit debugging information");
         public Option<bool> UseDwarf5 { get; } =
             new(new[] { "--gdwarf-5" }, "Generate source-level debug information with dwarf version 5");
         public Option<bool> NativeLib { get; } =
             new(new[] { "--nativelib" }, "Compile as static or shared library");
+        public Option<bool> SplitExeInitialization { get; } =
+            new(new[] { "--splitinit" }, "Split initialization of an executable between the library entrypoint and a main entrypoint");
         public Option<string> ExportsFile { get; } =
             new(new[] { "--exportsfile" }, "File to write exported method definitions");
         public Option<string> DgmlLogFileName { get; } =
@@ -67,8 +68,6 @@ namespace ILCompiler
             new(new[] { "--mstat" }, "Generate an mstat file");
         public Option<string> MetadataLogFileName { get; } =
             new(new[] { "--metadatalog" }, "Generate a metadata log file");
-        public Option<bool> NoMetadataBlocking { get; } =
-            new(new[] { "--nometadatablocking" }, "Ignore metadata blocking for internal implementation details");
         public Option<bool> CompleteTypesMetadata { get; } =
             new(new[] { "--completetypemetadata" }, "Generate complete metadata for types");
         public Option<string> ReflectionData { get; } =
@@ -79,6 +78,8 @@ namespace ILCompiler
             new(new[] { "--scan" }, "Use IL scanner to generate optimized code (implied by -O)");
         public Option<bool> NoScanner { get; } =
             new(new[] { "--noscan" }, "Do not use IL scanner to generate optimized code");
+        public Option<bool> NoInlineTls { get; } =
+            new(new[] { "--noinlinetls" }, "Do not generate inline thread local statics");
         public Option<string> IlDump { get; } =
             new(new[] { "--ildump" }, "Dump IL assembly listing for compiler-generated IL");
         public Option<bool> EmitStackTraceData { get; } =
@@ -87,12 +88,12 @@ namespace ILCompiler
             new(new[] { "--methodbodyfolding" }, "Fold identical method bodies");
         public Option<string[]> InitAssemblies { get; } =
             new(new[] { "--initassembly" }, Array.Empty<string>, "Assembly(ies) with a library initializer");
-        public Option<string[]> AppContextSwitches { get; } =
-            new(new[] { "--appcontextswitch" }, Array.Empty<string>, "System.AppContext switches to set (format: 'Key=Value')");
         public Option<string[]> FeatureSwitches { get; } =
             new(new[] { "--feature" }, Array.Empty<string>, "Feature switches to apply (format: 'Namespace.Name=[true|false]'");
         public Option<string[]> RuntimeOptions { get; } =
             new(new[] { "--runtimeopt" }, Array.Empty<string>, "Runtime options to set");
+        public Option<string[]> RuntimeKnobs { get; } =
+            new(new[] { "--runtimeknob" }, Array.Empty<string>, "Runtime knobs to set");
         public Option<int> Parallelism { get; } =
             new(new[] { "--parallelism" }, result =>
             {
@@ -111,8 +112,12 @@ namespace ILCompiler
             }, true, "Maximum number of threads to use during compilation");
         public Option<string> InstructionSet { get; } =
             new(new[] { "--instruction-set" }, "Instruction set to allow or disallow");
+        public Option<int> MaxVectorTBitWidth { get; } =
+            new(new[] { "--max-vectort-bitwidth" }, "Maximum width, in bits, that Vector<T> is allowed to be");
         public Option<string> Guard { get; } =
             new(new[] { "--guard" }, "Enable mitigations. Options: 'cf': CFG (Control Flow Guard, Windows only)");
+        public Option<bool> Dehydrate { get; } =
+            new(new[] { "--dehydrate" }, "Dehydrate runtime data structures");
         public Option<bool> PreinitStatics { get; } =
             new(new[] { "--preinitstatics" }, "Interpret static constructors at compile time if possible (implied by -O)");
         public Option<bool> NoPreinitStatics { get; } =
@@ -133,14 +138,16 @@ namespace ILCompiler
             new(new[] { "--directpinvoke" }, Array.Empty<string>, "PInvoke to call directly");
         public Option<string[]> DirectPInvokeLists { get; } =
             new(new[] { "--directpinvokelist" }, Array.Empty<string>, "File with list of PInvokes to call directly");
-        public Option<int> MaxGenericCycle { get; } =
-            new(new[] { "--maxgenericcycle" }, () => CompilerTypeSystemContext.DefaultGenericCycleCutoffPoint, "Max depth of generic cycle");
+        public Option<int> MaxGenericCycleDepth { get; } =
+            new(new[] { "--maxgenericcycle" }, () => CompilerTypeSystemContext.DefaultGenericCycleDepthCutoff, "Max depth of generic cycle");
+        public Option<int> MaxGenericCycleBreadth { get; } =
+            new(new[] { "--maxgenericcyclebreadth" }, () => CompilerTypeSystemContext.DefaultGenericCycleBreadthCutoff, "Max breadth of generic cycle expansion");
         public Option<string[]> RootedAssemblies { get; } =
             new(new[] { "--root" }, Array.Empty<string>, "Fully generate given assembly");
-        public Option<IEnumerable<string>> ConditionallyRootedAssemblies { get; } =
-            new(new[] { "--conditionalroot" }, result => ILLinkify(result.Tokens), true, "Fully generate given assembly if it's used");
-        public Option<IEnumerable<string>> TrimmedAssemblies { get; } =
-            new(new[] { "--trim" }, result => ILLinkify(result.Tokens), true, "Trim the specified assembly");
+        public Option<string[]> ConditionallyRootedAssemblies { get; } =
+            new(new[] { "--conditionalroot" }, Array.Empty<string>, "Fully generate given assembly if it's used");
+        public Option<string[]> TrimmedAssemblies { get; } =
+            new(new[] { "--trim" }, Array.Empty<string>, "Trim the specified assembly");
         public Option<bool> RootDefaultAssemblies { get; } =
             new(new[] { "--defaultrooting" }, "Root assemblies that are not marked [IsTrimmable]");
         public Option<TargetArchitecture> TargetArchitecture { get; } =
@@ -157,6 +164,8 @@ namespace ILCompiler
             new(new[] { "--singlemethodgenericarg" }, "Single method compilation: generic arguments to the method");
         public Option<string> MakeReproPath { get; } =
             new(new[] { "--make-repro-path" }, "Path where to place a repro package");
+        public Option<string[]> UnmanagedEntryPointsAssemblies { get; } =
+            new(new[] { "--generateunmanagedentrypoints" }, Array.Empty<string>, "Generate unmanaged entrypoints for a given assembly");
 
         public OptimizationMode OptimizationMode { get; private set; }
         public ParseResult Result;
@@ -170,9 +179,11 @@ namespace ILCompiler
             AddOption(OptimizeSpace);
             AddOption(OptimizeTime);
             AddOption(MibcFilePaths);
+            AddOption(SatelliteFilePaths);
             AddOption(EnableDebugInfo);
             AddOption(UseDwarf5);
             AddOption(NativeLib);
+            AddOption(SplitExeInitialization);
             AddOption(ExportsFile);
             AddOption(DgmlLogFileName);
             AddOption(GenerateFullDgmlLog);
@@ -189,22 +200,24 @@ namespace ILCompiler
             AddOption(MapFileName);
             AddOption(MstatFileName);
             AddOption(MetadataLogFileName);
-            AddOption(NoMetadataBlocking);
             AddOption(CompleteTypesMetadata);
             AddOption(ReflectionData);
             AddOption(ScanReflection);
             AddOption(UseScanner);
             AddOption(NoScanner);
+            AddOption(NoInlineTls);
             AddOption(IlDump);
             AddOption(EmitStackTraceData);
             AddOption(MethodBodyFolding);
             AddOption(InitAssemblies);
-            AddOption(AppContextSwitches);
             AddOption(FeatureSwitches);
             AddOption(RuntimeOptions);
+            AddOption(RuntimeKnobs);
             AddOption(Parallelism);
             AddOption(InstructionSet);
+            AddOption(MaxVectorTBitWidth);
             AddOption(Guard);
+            AddOption(Dehydrate);
             AddOption(PreinitStatics);
             AddOption(NoPreinitStatics);
             AddOption(SuppressedWarnings);
@@ -215,7 +228,8 @@ namespace ILCompiler
             AddOption(SingleWarnDisabledAssemblies);
             AddOption(DirectPInvokes);
             AddOption(DirectPInvokeLists);
-            AddOption(MaxGenericCycle);
+            AddOption(MaxGenericCycleDepth);
+            AddOption(MaxGenericCycleBreadth);
             AddOption(RootedAssemblies);
             AddOption(ConditionallyRootedAssemblies);
             AddOption(TrimmedAssemblies);
@@ -227,20 +241,21 @@ namespace ILCompiler
             AddOption(SingleMethodName);
             AddOption(SingleMethodGenericArgs);
             AddOption(MakeReproPath);
+            AddOption(UnmanagedEntryPointsAssemblies);
 
             this.SetHandler(context =>
             {
                 Result = context.ParseResult;
 
-                if (context.ParseResult.GetValueForOption(OptimizeSpace))
+                if (context.ParseResult.GetValue(OptimizeSpace))
                 {
                     OptimizationMode = OptimizationMode.PreferSize;
                 }
-                else if (context.ParseResult.GetValueForOption(OptimizeTime))
+                else if (context.ParseResult.GetValue(OptimizeTime))
                 {
                     OptimizationMode = OptimizationMode.PreferSpeed;
                 }
-                else if (context.ParseResult.GetValueForOption(Optimize))
+                else if (context.ParseResult.GetValue(Optimize))
                 {
                     OptimizationMode = OptimizationMode.Blended;
                 }
@@ -251,7 +266,7 @@ namespace ILCompiler
 
                 try
                 {
-                    string makeReproPath = context.ParseResult.GetValueForOption(MakeReproPath);
+                    string makeReproPath = context.ParseResult.GetValue(MakeReproPath);
                     if (makeReproPath != null)
                     {
                         // Create a repro package in the specified path
@@ -259,8 +274,11 @@ namespace ILCompiler
                         // + the original command line arguments
                         // + a rsp file that should work to directly run out of the zip file
 
-                        Helpers.MakeReproPackage(makeReproPath, context.ParseResult.GetValueForOption(OutputFilePath), args,
-                            context.ParseResult, new[] { "r", "reference", "m", "mibc", "rdxml", "directpinvokelist", "descriptor" });
+#pragma warning disable CA1861 // Avoid constant arrays as arguments. Only executed once during the execution of the program.
+                        Helpers.MakeReproPackage(makeReproPath, context.ParseResult.GetValue(OutputFilePath), args, context.ParseResult,
+                            inputOptions : new[] { "r", "reference", "m", "mibc", "rdxml", "directpinvokelist", "descriptor" },
+                            outputOptions : new[] { "o", "out", "exportsfile" });
+#pragma warning restore CA1861 // Avoid constant arrays as arguments
                     }
 
                     context.ExitCode = new Program(this).Run();
@@ -287,9 +305,9 @@ namespace ILCompiler
             });
         }
 
-        public static IEnumerable<HelpSectionDelegate> GetExtendedHelp(HelpContext _)
+        public static IEnumerable<Action<HelpContext>> GetExtendedHelp(HelpContext _)
         {
-            foreach (HelpSectionDelegate sectionDelegate in HelpBuilder.Default.GetLayout())
+            foreach (Action<HelpContext> sectionDelegate in HelpBuilder.Default.GetLayout())
                 yield return sectionDelegate;
 
             yield return _ =>
@@ -303,7 +321,7 @@ namespace ILCompiler
                     "considered to be input files. If no input files begin with '--' then this option is not necessary.\n");
 
                 string[] ValidArchitectures = new string[] { "arm", "arm64", "x86", "x64" };
-                string[] ValidOS = new string[] { "windows", "linux", "osx" };
+                string[] ValidOS = new string[] { "windows", "linux", "freebsd", "osx", "maccatalyst", "ios", "iossimulator", "tvos", "tvossimulator" };
 
                 Console.WriteLine("Valid switches for {0} are: '{1}'. The default value is '{2}'\n", "--targetos", string.Join("', '", ValidOS), Helpers.GetTargetOS(null).ToString().ToLowerInvariant());
 
@@ -343,29 +361,6 @@ namespace ILCompiler
                 Console.WriteLine("The following CPU names are predefined groups of instruction sets and can be used in --instruction-set too:");
                 Console.WriteLine(string.Join(", ", Internal.JitInterface.InstructionSetFlags.AllCpuNames));
             };
-        }
-
-        private static IEnumerable<string> ILLinkify(IReadOnlyList<Token> tokens)
-        {
-            if (tokens.Count == 0)
-            {
-                yield return string.Empty;
-                yield break;
-            }
-
-            foreach(Token token in tokens)
-            {
-                string rootedAssembly = token.Value;
-
-                // For compatibility with IL Linker, the parameter could be a file name or an assembly name.
-                // This is the logic IL Linker uses to decide how to interpret the string. Really.
-                string simpleName;
-                if (File.Exists(rootedAssembly))
-                    simpleName = Path.GetFileNameWithoutExtension(rootedAssembly);
-                else
-                    simpleName = rootedAssembly;
-                yield return simpleName;
-            }
         }
 
 #if DEBUG

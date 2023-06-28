@@ -27,6 +27,7 @@ class Generics
         TestGvmDelegates.Run();
         TestGvmDependencies.Run();
         TestGvmLookups.Run();
+        TestGvmOnInterface.Run();
         TestSharedAndUnsharedGvmAnalysisRegression.Run();
         TestInterfaceVTableTracking.Run();
         TestClassVTableTracking.Run();
@@ -46,16 +47,17 @@ class Generics
         TestRecursionInGenericVirtualMethods.Run();
         TestRecursionInGenericInterfaceMethods.Run();
         TestRecursionThroughGenericLookups.Run();
+        TestRecursionInFields.Run();
         TestGvmLookupDependency.Run();
         TestInvokeMemberCornerCaseInGenerics.Run();
         TestRefAny.Run();
-#if !CODEGEN_CPP
         TestNullableCasting.Run();
         TestVariantCasting.Run();
         TestMDArrayAddressMethod.Run();
         TestNativeLayoutGeneration.Run();
         TestByRefLikeVTables.Run();
-#endif
+        TestFunctionPointerLoading.Run();
+
         return 100;
     }
 
@@ -1666,6 +1668,56 @@ class Generics
         }
     }
 
+    class TestGvmOnInterface
+    {
+        interface IGvmMethods
+        {
+            static abstract int StaticAbstractGvm<T>();
+            int InstanceGvm<T>();
+            int InstanceDefaultGvm<T>() { return 0; }
+            static void StaticGeneric<T>() { }
+        }
+
+        class BaseWithInterface : IGvmMethods
+        {
+            public static int StaticAbstractGvm<T>() { return 1; }
+            public int InstanceGvm<T>() { return 1; }
+            int IGvmMethods.InstanceDefaultGvm<T>() { return 1; }
+        }
+
+        static void TestInContext<T>()
+        {
+            BaseWithInterface b = new BaseWithInterface();
+            IGvmMethods i = new BaseWithInterface();
+
+            if (BaseWithInterface.StaticAbstractGvm<T>() != 1)
+                throw new Exception();
+
+            if (b.InstanceGvm<T>() != 1)
+                throw new Exception();
+
+            if (i.InstanceGvm<T>() != 1)
+                throw new Exception();
+
+            if (i.InstanceDefaultGvm<T>() != 1)
+                throw new Exception();
+        }
+
+        static void TestStaticAbstractGvm<T, TMethods>() where TMethods : IGvmMethods
+        {
+            if (TMethods.StaticAbstractGvm<T>() != 1)
+                throw new Exception();
+        }
+
+        public static void Run()
+        {
+            TestInContext<object>();
+            TestInContext<int>();
+            TestStaticAbstractGvm<object, BaseWithInterface>();
+            TestStaticAbstractGvm<int, BaseWithInterface>();
+        }
+    }
+
     class TestSharedAndUnsharedGvmAnalysisRegression
     {
         interface IAtom { }
@@ -2381,6 +2433,97 @@ class Generics
             RefStruct<string> r = default;
             if (r.ToString() != "System.String")
                 throw new Exception();
+        }
+    }
+
+    class TestFunctionPointerLoading
+    {
+        interface IFace
+        {
+            Type GrabManagedFnptr();
+            Type GrabManagedRefFnptr();
+            Type GrabUnmanagedFnptr();
+            Type GrabUnmanagedStdcallFnptr();
+            Type GrabUnmanagedStdcallSuppressGCFnptr();
+            Array GetFunctionPointerArray();
+            Array GetFunctionPointerMdArray();
+            Type GrabManagedFnptrOverAlsoGen();
+            Type GrabManagedFnptrOverAlsoAlsoGen();
+        }
+
+        unsafe class Gen<T> : IFace
+        {
+            public Type GrabManagedFnptr() => typeof(delegate*<T>);
+            public Type GrabManagedRefFnptr() => typeof(delegate*<ref T>);
+            public Type GrabUnmanagedFnptr() => typeof(delegate* unmanaged<T>);
+            public Type GrabUnmanagedStdcallFnptr() => typeof(delegate* unmanaged[Stdcall]<T>);
+            public Type GrabUnmanagedStdcallSuppressGCFnptr() => typeof(delegate* unmanaged[Stdcall, SuppressGCTransition]<T>);
+            public Array GetFunctionPointerArray() => new delegate*<T[,]>[1];
+            public Array GetFunctionPointerMdArray() => new delegate*<T[,]>[1, 1];
+            public Type GrabManagedFnptrOverAlsoGen() => typeof(delegate*<MyGen<T>, AlsoGen<T>>);
+            public Type GrabManagedFnptrOverAlsoAlsoGen() => typeof(delegate*<AlsoAlsoGen<T>, MyGen<T>>);
+        }
+
+        class MyGen<T> { }
+
+        class AlsoGen<T> { }
+
+        class AlsoAlsoGen<T> { }
+
+        class Atom { }
+
+        static Type s_atomType = typeof(Atom);
+
+        public static void Run()
+        {
+            var o = (IFace)Activator.CreateInstance(typeof(Gen<>).MakeGenericType(s_atomType));
+
+            {
+                Type t = o.GrabManagedFnptr();
+                if (!t.IsFunctionPointer || t.GetFunctionPointerReturnType() != typeof(Atom) || t.IsUnmanagedFunctionPointer)
+                    throw new Exception();
+            }
+
+            {
+                Type t = o.GrabManagedRefFnptr();
+                if (!t.IsFunctionPointer || t.GetFunctionPointerReturnType() != typeof(Atom).MakeByRefType() || t.IsUnmanagedFunctionPointer)
+                    throw new Exception();
+            }
+
+            {
+                Type t = o.GrabUnmanagedFnptr();
+                if (!t.IsFunctionPointer || t.GetFunctionPointerReturnType() != typeof(Atom) || !t.IsUnmanagedFunctionPointer)
+                    throw new Exception();
+
+                if (t != o.GrabUnmanagedStdcallFnptr() || t != o.GrabUnmanagedStdcallSuppressGCFnptr())
+                    throw new Exception();
+            }
+
+            {
+                Array arr = o.GetFunctionPointerArray();
+                if (!arr.GetType().GetElementType().IsFunctionPointer)
+                    throw new Exception();
+            }
+
+            {
+                Array arr = o.GetFunctionPointerMdArray();
+                if (!arr.GetType().GetElementType().IsFunctionPointer)
+                    throw new Exception();
+            }
+
+            {
+                Type t = o.GrabManagedFnptrOverAlsoGen();
+                if (!t.IsFunctionPointer
+                    || t.GetFunctionPointerReturnType().GetGenericTypeDefinition() != typeof(AlsoGen<>)
+                    || t.GetFunctionPointerReturnType().GetGenericArguments()[0] != typeof(Atom))
+                    throw new Exception();
+            }
+
+            {
+                Type t = o.GrabManagedFnptrOverAlsoAlsoGen();
+                if (!t.TypeHandle.Equals(typeof(delegate*<AlsoAlsoGen<Atom>, MyGen<Atom>>).TypeHandle))
+                    throw new Exception();
+            }
         }
     }
 
@@ -3220,6 +3363,24 @@ class Generics
             // There is a generic recursion in the above hierarchy. This just tests that we can compile.
             new ArrayHandler<object>().Write(null);
             new RangeHandler<object>().Write(default);
+        }
+    }
+
+    class TestRecursionInFields
+    {
+        class Chunk<T>
+        {
+            public Chunk<T[]> TheChunk;
+            public Chunk()
+            {
+                if (typeof(T).ToString().Length < 100)
+                    TheChunk = new Chunk<T[]>();
+            }
+        }
+
+        public static void Run()
+        {
+            typeof(Chunk<byte>).GetFields();
         }
     }
 

@@ -44,9 +44,20 @@ namespace ILCompiler.DependencyAnalysis
         }
     }
 
+    public enum TypeValidationRule
+    {
+        Automatic,
+        AutomaticWithLogging,
+        AlwaysValidate,
+        SkipTypeValidation
+    }
+
     public sealed class NodeFactoryOptimizationFlags
     {
         public bool OptimizeAsyncMethods;
+        public TypeValidationRule TypeValidation;
+        public int DeterminismStress;
+        public bool PrintReproArgs;
     }
 
     // To make the code future compatible to the composite R2R story
@@ -186,7 +197,10 @@ namespace ILCompiler.DependencyAnalysis
             ResourceData win32Resources,
             ReadyToRunFlags flags,
             NodeFactoryOptimizationFlags nodeFactoryOptimizationFlags,
-            ulong imageBase)
+            ulong imageBase,
+            EcmaModule associatedModule,
+            int genericCycleDepthCutoff,
+            int genericCycleBreadthCutoff)
         {
             OptimizationFlags = nodeFactoryOptimizationFlags;
             TypeSystemContext = context;
@@ -198,7 +212,8 @@ namespace ILCompiler.DependencyAnalysis
             CopiedCorHeaderNode = corHeaderNode;
             DebugDirectoryNode = debugDirectoryNode;
             Resolver = compilationModuleGroup.Resolver;
-            Header = new GlobalHeaderNode(flags);
+
+            Header = new GlobalHeaderNode(flags, associatedModule);
             ImageBase = imageBase;
             if (!win32Resources.IsEmpty)
                 Win32ResourcesNode = new Win32ResourcesNode(win32Resources);
@@ -214,6 +229,13 @@ namespace ILCompiler.DependencyAnalysis
             }
 
             CreateNodeCaches();
+
+            if (genericCycleBreadthCutoff >= 0 || genericCycleDepthCutoff >= 0)
+            {
+                _genericCycleDetector = new LazyGenericsSupport.GenericCycleDetector(
+                    depthCutoff: genericCycleDepthCutoff,
+                    breadthCutoff: genericCycleBreadthCutoff);
+            }
         }
 
         private void CreateNodeCaches()
@@ -386,6 +408,8 @@ namespace ILCompiler.DependencyAnalysis
         public ImportSectionNode ILBodyPrecodeImports;
 
         private NodeCache<ReadyToRunHelper, Import> _constructedHelpers;
+
+        private LazyGenericsSupport.GenericCycleDetector _genericCycleDetector;
 
         public Import GetReadyToRunHelperCell(ReadyToRunHelper helperId)
         {
@@ -731,6 +755,24 @@ namespace ILCompiler.DependencyAnalysis
                     AttributePresenceFilterNode attributePresenceTable = new AttributePresenceFilterNode(inputModule);
                     tableHeader.Add(Internal.Runtime.ReadyToRunSectionType.AttributePresence, attributePresenceTable, attributePresenceTable);
                 }
+
+                if (EnclosingTypeMapNode.IsSupported(inputModule.MetadataReader))
+                {
+                    var node = new EnclosingTypeMapNode(inputModule);
+                    tableHeader.Add(Internal.Runtime.ReadyToRunSectionType.EnclosingTypeMap, node, node);
+                }
+
+                if (TypeGenericInfoMapNode.IsSupported(inputModule.MetadataReader))
+                {
+                    var node = new TypeGenericInfoMapNode(inputModule);
+                    tableHeader.Add(Internal.Runtime.ReadyToRunSectionType.TypeGenericInfoMap, node, node);
+                }
+
+                if (MethodIsGenericMapNode.IsSupported(inputModule.MetadataReader))
+                {
+                    var node = new MethodIsGenericMapNode(inputModule);
+                    tableHeader.Add(Internal.Runtime.ReadyToRunSectionType.MethodIsGenericMap, node, node);
+                }
             }
 
             InliningInfoNode crossModuleInliningInfoTable = new InliningInfoNode(null, 
@@ -742,7 +784,7 @@ namespace ILCompiler.DependencyAnalysis
             Header.Add(Internal.Runtime.ReadyToRunSectionType.InstanceMethodEntryPoints, InstanceEntryPointTable, InstanceEntryPointTable);
 
             ImportSectionsTable = new ImportSectionsTableNode(this);
-            Header.Add(Internal.Runtime.ReadyToRunSectionType.ImportSections, ImportSectionsTable, ImportSectionsTable.StartSymbol);
+            Header.Add(Internal.Runtime.ReadyToRunSectionType.ImportSections, ImportSectionsTable, ImportSectionsTable);
 
             DebugInfoTable = new DebugInfoTableNode();
             Header.Add(Internal.Runtime.ReadyToRunSectionType.DebugInfo, DebugInfoTable, DebugInfoTable);
@@ -779,22 +821,26 @@ namespace ILCompiler.DependencyAnalysis
             if ((ProfileDataManager != null) && (ProfileDataManager.EmbedPgoDataInR2RImage))
             {
                 // Profile instrumentation data attaches here
-                HashSet<MethodDesc> methodsToInsertInstrumentationDataFor = new HashSet<MethodDesc>();
-                foreach (EcmaModule inputModule in CompilationModuleGroup.CompilationModuleSet)
+
+                bool HasAnyProfileDataForInput()
                 {
-                    foreach (MethodDesc method in ProfileDataManager.GetMethodsForModuleDesc(inputModule))
+                    foreach (EcmaModule inputModule in CompilationModuleGroup.CompilationModuleSet)
                     {
-                        if (ProfileDataManager[method].SchemaData != null)
+                        foreach (MethodDesc method in ProfileDataManager.GetInputProfileDataMethodsForModule(inputModule))
                         {
-                            methodsToInsertInstrumentationDataFor.Add(method);
+                            if (ProfileDataManager[method].SchemaData != null)
+                            {
+                                return true;
+                            }
                         }
                     }
+
+                    return false;
                 }
-                if (methodsToInsertInstrumentationDataFor.Count != 0)
+
+                if (ProfileDataManager.SynthesizeRandomPgoData || HasAnyProfileDataForInput())
                 {
-                    MethodDesc[] methodsToInsert = methodsToInsertInstrumentationDataFor.ToArray();
-                    methodsToInsert.MergeSort(TypeSystemComparer.Instance.Compare);
-                    InstrumentationDataTable = new InstrumentationDataTableNode(this, methodsToInsert, ProfileDataManager);
+                    InstrumentationDataTable = new InstrumentationDataTableNode(this, ProfileDataManager);
                     Header.Add(Internal.Runtime.ReadyToRunSectionType.PgoInstrumentationData, InstrumentationDataTable, InstrumentationDataTable);
                 }
             }
@@ -1003,6 +1049,11 @@ namespace ILCompiler.DependencyAnalysis
         public CopiedManagedResourcesNode CopiedManagedResources(EcmaModule module)
         {
             return _copiedManagedResources.GetOrAdd(module);
+        }
+
+        public void DetectGenericCycles(TypeSystemEntity caller, TypeSystemEntity callee)
+        {
+            _genericCycleDetector?.DetectCycle(caller, callee);
         }
     }
 }

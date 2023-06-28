@@ -10,17 +10,14 @@ namespace System.Reflection
     {
         private readonly RuntimeConstructorInfo _method;
 
-#if !MONO // Temporary until Mono is updated.
         private bool _invoked;
         private bool _strategyDetermined;
         private InvokerEmitUtil.InvokeFunc? _invokeFunc;
-#endif
 
         public ConstructorInvoker(RuntimeConstructorInfo constructorInfo)
         {
             _method = constructorInfo;
 
-#if !MONO // Temporary until Mono is updated.
             if (LocalAppContextSwitches.ForceInterpretedInvoke && !LocalAppContextSwitches.ForceEmitInvoke)
             {
                 // Always use the native invoke; useful for testing.
@@ -28,16 +25,12 @@ namespace System.Reflection
             }
             else if (LocalAppContextSwitches.ForceEmitInvoke && !LocalAppContextSwitches.ForceInterpretedInvoke)
             {
-                // Always use emit invoke (if IsDynamicCodeCompiled == true); useful for testing.
+                // Always use emit invoke (if IsDynamicCodeSupported == true); useful for testing.
                 _invoked = true;
             }
-#endif
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
-#if MONO // Temporary until Mono is updated.
-        public unsafe object? InlinedInvoke(object? obj, Span<object?> args, BindingFlags invokeAttr) => InterpretedInvoke(obj, args, invokeAttr);
-#else
         public unsafe object? InlinedInvoke(object? obj, IntPtr* args, BindingFlags invokeAttr)
         {
             if (_invokeFunc != null && (invokeAttr & BindingFlags.DoNotWrapExceptions) != 0 && obj == null)
@@ -46,9 +39,7 @@ namespace System.Reflection
             }
             return Invoke(obj, args, invokeAttr);
         }
-#endif
 
-#if !MONO // Temporary until Mono is updated.
         [DebuggerStepThrough]
         [DebuggerHidden]
         private unsafe object? Invoke(object? obj, IntPtr* args, BindingFlags invokeAttr)
@@ -62,7 +53,7 @@ namespace System.Reflection
                 }
                 else
                 {
-                    if (RuntimeFeature.IsDynamicCodeCompiled)
+                    if (RuntimeFeature.IsDynamicCodeSupported)
                     {
                         _invokeFunc = InvokerEmitUtil.CreateInvokeDelegate(_method);
                     }
@@ -102,6 +93,5 @@ namespace System.Reflection
 
             return ret;
         }
-#endif
     }
 }

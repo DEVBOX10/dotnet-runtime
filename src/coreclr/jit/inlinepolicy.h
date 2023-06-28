@@ -112,6 +112,7 @@ public:
         , m_IsNoReturnKnown(false)
         , m_ConstArgFeedsIsKnownConst(false)
         , m_ArgFeedsIsKnownConst(false)
+        , m_InsideThrowBlock(false)
     {
         // empty
     }
@@ -125,6 +126,11 @@ public:
     // Policy determinations
     void DetermineProfitability(CORINFO_METHOD_INFO* methodInfo) override;
     bool BudgetCheck() const override;
+
+    virtual unsigned EstimatedTotalILSize() const
+    {
+        return m_CodeSize;
+    }
 
     // Policy policies
     bool PropagateNeverToRuntime() const override;
@@ -182,6 +188,7 @@ protected:
     bool                    m_IsNoReturnKnown : 1;
     bool                    m_ConstArgFeedsIsKnownConst : 1;
     bool                    m_ArgFeedsIsKnownConst : 1;
+    bool                    m_InsideThrowBlock : 1;
 };
 
 // ExtendedDefaultPolicy is a slightly more aggressive variant of
@@ -209,6 +216,7 @@ public:
         , m_FoldableExprUn(0)
         , m_FoldableBranch(0)
         , m_FoldableSwitch(0)
+        , m_UnrollableMemop(0)
         , m_Switch(0)
         , m_DivByCns(0)
         , m_ReturnsStructByValue(false)
@@ -225,6 +233,8 @@ public:
     void NoteDouble(InlineObservation obs, double value) override;
 
     double DetermineMultiplier() override;
+
+    unsigned EstimatedTotalILSize() const override;
 
     bool RequiresPreciseScan() override
     {
@@ -259,6 +269,7 @@ protected:
     unsigned m_FoldableExprUn;
     unsigned m_FoldableBranch;
     unsigned m_FoldableSwitch;
+    unsigned m_UnrollableMemop;
     unsigned m_Switch;
     unsigned m_DivByCns;
     bool     m_ReturnsStructByValue : 1;

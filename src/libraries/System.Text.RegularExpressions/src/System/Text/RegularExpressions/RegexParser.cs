@@ -1,6 +1,7 @@
 // Licensed to the .NET Foundation under one or more agreements.
 // The .NET Foundation licenses this file to you under the MIT license.
 
+using System.Buffers;
 using System.Collections;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -149,18 +150,13 @@ namespace System.Text.RegularExpressions
         /// </summary>
         public static string Escape(string input)
         {
-            for (int i = 0; i < input.Length; i++)
-            {
-                if (IsMetachar(input[i]))
-                {
-                    return EscapeImpl(input, i);
-                }
-            }
-
-            return input;
+            int indexOfMetachar = IndexOfMetachar(input.AsSpan());
+            return indexOfMetachar < 0
+                ? input
+                : EscapeImpl(input.AsSpan(), indexOfMetachar);
         }
 
-        private static string EscapeImpl(string input, int i)
+        private static string EscapeImpl(ReadOnlySpan<char> input, int indexOfMetachar)
         {
             // For small inputs we allocate on the stack. In most cases a buffer three
             // times larger the original string should be sufficient as usually not all
@@ -171,12 +167,18 @@ namespace System.Text.RegularExpressions
                 new ValueStringBuilder(stackalloc char[EscapeMaxBufferSize]) :
                 new ValueStringBuilder(input.Length + 200);
 
-            char ch = input[i];
-            vsb.Append(input.AsSpan(0, i));
-
-            do
+            while (true)
             {
-                vsb.Append('\\');
+                vsb.Append(input.Slice(0, indexOfMetachar));
+                input = input.Slice(indexOfMetachar);
+
+                if (input.IsEmpty)
+                {
+                    break;
+                }
+
+                char ch = input[0];
+
                 switch (ch)
                 {
                     case '\n':
@@ -193,23 +195,16 @@ namespace System.Text.RegularExpressions
                         break;
                 }
 
+                vsb.Append('\\');
                 vsb.Append(ch);
-                i++;
-                int lastpos = i;
+                input = input.Slice(1);
 
-                while (i < input.Length)
+                indexOfMetachar = IndexOfMetachar(input);
+                if (indexOfMetachar < 0)
                 {
-                    ch = input[i];
-                    if (IsMetachar(ch))
-                    {
-                        break;
-                    }
-
-                    i++;
+                    indexOfMetachar = input.Length;
                 }
-
-                vsb.Append(input.AsSpan(lastpos, i - lastpos));
-            } while (i < input.Length);
+            }
 
             return vsb.ToString();
         }
@@ -339,7 +334,7 @@ namespace System.Text.RegularExpressions
 
                     if (isQuantifier)
                     {
-                        AddUnitOne(CharAt(endpos - 1));
+                        _unit = RegexNode.CreateOneWithCaseConversion(CharAt(endpos - 1), _options, _culture, ref _caseBehavior);
                     }
                 }
 
@@ -385,7 +380,7 @@ namespace System.Text.RegularExpressions
                         PopGroup();
                         PopOptions();
 
-                        if (Unit() == null)
+                        if (_unit == null)
                         {
                             goto ContinueOuterScan;
                         }
@@ -397,15 +392,15 @@ namespace System.Text.RegularExpressions
                             throw MakeException(RegexParseError.UnescapedEndingBackslash, SR.UnescapedEndingBackslash);
                         }
 
-                        AddUnitNode(ScanBackslash(scanOnly: false)!);
+                        _unit = ScanBackslash(scanOnly: false)!;
                         break;
 
                     case '^':
-                        AddUnitType(UseOptionM() ? RegexNodeKind.Bol : RegexNodeKind.Beginning);
+                        _unit = new RegexNode(UseOptionM() ? RegexNodeKind.Bol : RegexNodeKind.Beginning, _options);
                         break;
 
                     case '$':
-                        AddUnitType(UseOptionM() ? RegexNodeKind.Eol : RegexNodeKind.EndZ);
+                        _unit = new RegexNode(UseOptionM() ? RegexNodeKind.Eol : RegexNodeKind.EndZ, _options);
                         break;
 
                     case '.':
@@ -418,7 +413,7 @@ namespace System.Text.RegularExpressions
                     case '*':
                     case '+':
                     case '?':
-                        if (Unit() == null)
+                        if (_unit == null)
                         {
                             throw wasPrevQuantifier ?
                                 MakeException(RegexParseError.NestedQuantifiersNotParenthesized, SR.Format(SR.NestedQuantifiersNotParenthesized, ch)) :
@@ -443,7 +438,7 @@ namespace System.Text.RegularExpressions
                 ch = RightCharMoveRight();
 
                 // Handle quantifiers
-                while (Unit() != null)
+                while (_unit != null)
                 {
                     int min = 0, max = 0;
 
@@ -519,7 +514,7 @@ namespace System.Text.RegularExpressions
 
             AddGroup();
 
-            return Unit()!.FinalOptimize();
+            return _unit!.FinalOptimize();
         }
 
         /*
@@ -552,7 +547,7 @@ namespace System.Text.RegularExpressions
                     if (RightCharMoveRight() == '$')
                     {
                         RegexNode node = ScanDollar();
-                        AddUnitNode(node);
+                        _unit = node;
                     }
 
                     AddConcatenate();
@@ -2081,6 +2076,27 @@ namespace System.Text.RegularExpressions
             // '  a  b  c  d  e  f  g  h  i  j  k  l  m  n  o  p  q  r  s  t  u  v  w  x  y  z  {  |  }  ~
                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, Q, S, 0, 0, 0};
 
+#if NET8_0_OR_GREATER
+        private static readonly SearchValues<char> s_metachars =
+            SearchValues.Create("\t\n\f\r #$()*+.?[\\^{|");
+
+        private static int IndexOfMetachar(ReadOnlySpan<char> input) =>
+            input.IndexOfAny(s_metachars);
+#else
+        private static int IndexOfMetachar(ReadOnlySpan<char> input)
+        {
+            for (int i = 0; i < input.Length; i++)
+            {
+                if (IsMetachar(input[i]))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+#endif
+
         /// <summary>Returns true for those characters that terminate a string of ordinary chars.</summary>
         private static bool IsSpecial(char ch) => ch <= '|' && Category[ch] >= S;
 
@@ -2230,18 +2246,6 @@ namespace System.Text.RegularExpressions
             _unit = null;
         }
 
-        /// <summary>Returns the current unit</summary>
-        private RegexNode? Unit() => _unit;
-
-        /// <summary>Sets the current unit to a single char node</summary>
-        private void AddUnitOne(char ch) => _unit = RegexNode.CreateOneWithCaseConversion(ch, _options, _culture, ref _caseBehavior);
-
-        /// <summary>Sets the current unit to a subtree</summary>
-        private void AddUnitNode(RegexNode node) => _unit = node;
-
-        /// <summary>Sets the current unit to an assertion of the specified type</summary>
-        private void AddUnitType(RegexNodeKind type) => _unit = new RegexNode(type, _options);
-
         /// <summary>Finish the current group (in response to a ')' or end)</summary>
         private void AddGroup()
         {
@@ -2290,8 +2294,6 @@ namespace System.Text.RegularExpressions
 
         /// <summary>Moves the current position to the right.</summary>
         private void MoveRight() => _currentPos++;
-
-        private void MoveRight(int i) => _currentPos += i;
 
         /// <summary>Moves the current parsing position one to the left.</summary>
         private void MoveLeft() => --_currentPos;

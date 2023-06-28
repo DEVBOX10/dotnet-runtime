@@ -28,7 +28,6 @@ namespace System
         {
             s_latchedExitCode = exitCode;
             ShutdownCore();
-            RuntimeImports.RhpShutdown();
             ExitRaw();
         }
 
@@ -58,24 +57,11 @@ namespace System
 
         internal static void ShutdownCore()
         {
-#if !TARGET_WASM // WASMTODO Be careful what happens here as if the code has called emscripten_set_main_loop then the main loop method will normally be called repeatedly after this method
+#if !TARGET_BROWSER // WASMTODO Be careful what happens here as if the code has called emscripten_set_main_loop then the main loop method will normally be called repeatedly after this method
             AppContext.OnProcessExit();
 #endif
         }
 
         public static int TickCount => (int)TickCount64;
-
-        private static string[]? s_commandLineArgs;
-
-        public static string[] GetCommandLineArgs()
-        {
-            Debug.Assert(s_commandLineArgs != null, "VM did not properly setup application.");
-            return (string[])s_commandLineArgs.Clone();
-        }
-
-        internal static void SetCommandLineArgs(string[] cmdLineArgs)
-        {
-            s_commandLineArgs = cmdLineArgs;
-        }
     }
 }

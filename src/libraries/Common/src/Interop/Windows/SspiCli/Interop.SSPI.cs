@@ -38,10 +38,7 @@ internal static partial class Interop
                 dwUpper = IntPtr.Zero;
             }
 
-            public override string ToString()
-            {
-                { return dwLower.ToString("x") + ":" + dwUpper.ToString("x"); }
-            }
+            public override string ToString() => $"{dwLower:x}:{dwUpper:x}";
         }
 
         internal enum ContextAttribute
@@ -67,6 +64,7 @@ internal static partial class Interop
             SECPKG_ATTR_ISSUER_LIST_EX = 0x59,         // returns SecPkgContext_IssuerListInfoEx
             SECPKG_ATTR_CLIENT_CERT_POLICY = 0x60,     // sets    SecPkgCred_ClientCertCtlPolicy
             SECPKG_ATTR_CONNECTION_INFO = 0x5A,        // returns SecPkgContext_ConnectionInfo
+            SECPKG_ATTR_SESSION_INFO = 0x5D,           // sets    SecPkgContext_SessionInfo
             SECPKG_ATTR_CIPHER_INFO = 0x64,            // returns SecPkgContext_CipherInfo
             SECPKG_ATTR_REMOTE_CERT_CHAIN = 0x67,      // returns PCCERT_CONTEXT
             SECPKG_ATTR_UI_INFO = 0x68,                // sets    SEcPkgContext_UiInfo
@@ -334,6 +332,21 @@ internal static partial class Interop
             public char* pwszSslCtlIdentifier;
         }
 
+        [StructLayout(LayoutKind.Sequential)]
+        internal unsafe struct SecPkgContext_SessionInfo
+        {
+            public uint dwFlags;
+            public uint cbSessionId;
+            public fixed byte rgbSessionId[32];
+
+            [Flags]
+            public enum Flags
+            {
+                Zero = 0,
+                SSL_SESSION_RECONNECT = 0x01,
+            };
+        }
+
         [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial int EncryptMessage(
             ref CredHandle contextHandle,
@@ -347,6 +360,20 @@ internal static partial class Interop
             ref SecBufferDesc inputOutput,
             uint sequenceNumber,
             uint* qualityOfProtection);
+
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
+        internal static partial int MakeSignature(
+            ref CredHandle contextHandle,
+            uint qualityOfProtection,
+            ref SecBufferDesc inputOutput,
+            uint sequenceNumber);
+
+        [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
+        internal static unsafe partial int VerifySignature(
+            ref CredHandle contextHandle,
+            in SecBufferDesc input,
+            uint sequenceNumber,
+            uint *qualityOfProtection);
 
         [LibraryImport(Interop.Libraries.SspiCli, SetLastError = true)]
         internal static partial int QuerySecurityContextToken(

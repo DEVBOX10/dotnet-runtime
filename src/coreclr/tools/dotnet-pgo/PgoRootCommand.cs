@@ -51,8 +51,6 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             new("--dump-worst-overlap-graphs", () => -1, "Number of graphs to dump to .dot format in dump-worst-overlap-graphs-to directory");
         public Option<string> DumpWorstOverlapGraphsTo { get; } =
             new("--dump-worst-overlap-graphs-to", "Number of graphs to dump to .dot format in dump-worst-overlap-graphs-to directory");
-        public Option<bool> InheritTimestamp { get; } =
-            new("--inherit-timestamp", "If specified, set the output's timestamp to the max timestamp of the input files");
         public Option<bool> AutomaticReferences { get; } =
             new("--automatic-references", () => true, "Attempt to find references by using paths embedded in the trace file. Defaults to true");
         public Option<AssemblyName[]> IncludedAssemblies { get; } =
@@ -80,7 +78,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
         private Option<bool> _includeReadyToRun { get; } =
             new("--includeReadyToRun", "Include ReadyToRun methods in the trace file");
         private Option<Verbosity> _verbosity { get; } =
-            new(new[] { "--verbose", "-v" }, () => Verbosity.normal, "Adjust verbosity level. Supported levels are minimal, normal, detailed, and diagnostic");
+            new(new[] { "--verbose" }, () => Verbosity.normal, "Adjust verbosity level. Supported levels are minimal, normal, detailed, and diagnostic");
         private Option<bool> _isSorted { get; } =
             new("--sorted", "Generate sorted output.");
         private Option<bool> _showTimestamp { get; } =
@@ -170,14 +168,14 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 FileType = PgoFileType.jittrace;
                 ProcessJitEvents = true;
                 ValidateOutputFile = false;
-                ProcessR2REvents = context.ParseResult.GetValueForOption(_includeReadyToRun);
+                ProcessR2REvents = context.ParseResult.GetValue(_includeReadyToRun);
 
-                if (context.ParseResult.GetValueForOption(_isSorted))
+                if (context.ParseResult.GetValue(_isSorted))
                 {
                     JitTraceOptions |= JitTraceOptions.sorted;
                 }
 
-                if (context.ParseResult.GetValueForOption(_showTimestamp))
+                if (context.ParseResult.GetValue(_showTimestamp))
                 {
                     JitTraceOptions |= JitTraceOptions.showtimestamp;
                 }
@@ -193,7 +191,6 @@ namespace Microsoft.Diagnostics.Tools.Pgo
                 InputFilesToMerge,
                 OutputFilePath,
                 IncludedAssemblies,
-                InheritTimestamp,
                 _verbosity,
                 Compressed
             };
@@ -243,7 +240,7 @@ namespace Microsoft.Diagnostics.Tools.Pgo
 
                 if (setVerbosity)
                 {
-                    Verbosity verbosity = context.ParseResult.GetValueForOption(_verbosity);
+                    Verbosity verbosity = context.ParseResult.GetValue(_verbosity);
                     BasicProgressMessages = (int)verbosity >= (int)Verbosity.normal;
                     Warnings = (int)verbosity >= (int)Verbosity.normal;
                     VerboseWarnings = (int)verbosity >= (int)Verbosity.detailed;
@@ -270,9 +267,9 @@ namespace Microsoft.Diagnostics.Tools.Pgo
             }
         }
 
-        public static IEnumerable<HelpSectionDelegate> GetExtendedHelp(HelpContext context)
+        public static IEnumerable<Action<HelpContext>> GetExtendedHelp(HelpContext context)
         {
-            foreach (HelpSectionDelegate sectionDelegate in HelpBuilder.Default.GetLayout())
+            foreach (Action<HelpContext> sectionDelegate in HelpBuilder.Default.GetLayout())
                 yield return sectionDelegate;
 
             if (context.Command.Name == "create-mibc" || context.Command.Name == "create-jittrace")
