@@ -69,7 +69,7 @@ namespace System.Reflection.Runtime.PropertyInfos
         {
             get
             {
-                return ContextTypeInfo;
+                return ContextTypeInfo.ToType();
             }
         }
 
@@ -161,7 +161,7 @@ namespace System.Reflection.Runtime.PropertyInfos
                 if (propertyType == null)
                 {
                     TypeContext typeContext = ContextTypeInfo.TypeContext;
-                    _lazyPropertyType = propertyType = PropertyTypeHandle.Resolve(typeContext);
+                    _lazyPropertyType = propertyType = PropertyTypeHandle.Resolve(typeContext).ToType();
                 }
 
                 return propertyType;
@@ -172,7 +172,7 @@ namespace System.Reflection.Runtime.PropertyInfos
         {
             get
             {
-                return _reflectedType;
+                return _reflectedType.ToType();
             }
         }
 
@@ -334,8 +334,8 @@ namespace System.Reflection.Runtime.PropertyInfos
             return defaultValue;
         }
 
-        private volatile MethodInvoker _lazyGetterInvoker;
-        private volatile MethodInvoker _lazySetterInvoker;
+        private volatile MethodBaseInvoker _lazyGetterInvoker;
+        private volatile MethodBaseInvoker _lazySetterInvoker;
 
         private volatile RuntimeNamedMethodInfo _lazyGetter;
         private volatile RuntimeNamedMethodInfo _lazySetter;

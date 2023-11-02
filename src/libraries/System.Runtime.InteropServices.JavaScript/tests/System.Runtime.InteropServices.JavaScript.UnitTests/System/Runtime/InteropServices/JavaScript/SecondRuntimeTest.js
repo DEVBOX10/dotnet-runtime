@@ -3,7 +3,10 @@ export async function runSecondRuntimeAndTestStaticState() {
     const runtime2 = await dotnet2
         .withStartupMemoryCache(false)
         .withConfig({
-            assetUniqueQuery: "?instance=2",
+            forwardConsoleLogsToWS: false,
+            diagnosticTracing: false,
+            appendElementOnExit: false,
+            logExitCode: false,
         })
         .create();
 

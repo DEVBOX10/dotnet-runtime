@@ -60,6 +60,7 @@ public:
         }
 
         bool IntersectsOrAdjacent(const Segment& other) const;
+        bool Intersects(const Segment& other) const;
         bool Contains(const Segment& other) const;
         void Merge(const Segment& other);
     };
@@ -68,15 +69,15 @@ private:
     jitstd::vector<Segment> m_segments;
 
 public:
-    StructSegments(CompAllocator allocator) : m_segments(allocator)
+    explicit StructSegments(CompAllocator allocator) : m_segments(allocator)
     {
     }
 
     void Add(const Segment& segment);
     void Subtract(const Segment& segment);
     bool IsEmpty();
-    bool IsSingleSegment(Segment* result);
     bool CoveringSegment(Segment* result);
+    bool Intersects(const Segment& segment);
 
 #ifdef DEBUG
     void Dump();
@@ -88,12 +89,14 @@ struct AggregateInfo
 {
     jitstd::vector<Replacement> Replacements;
     unsigned                    LclNum;
+    // Unpromoted parts of the struct local.
+    StructSegments Unpromoted;
     // Min offset in the struct local of the unpromoted part.
     unsigned UnpromotedMin = 0;
     // Max offset in the struct local of the unpromoted part.
     unsigned UnpromotedMax = 0;
 
-    AggregateInfo(CompAllocator alloc, unsigned lclNum) : Replacements(alloc), LclNum(lclNum)
+    AggregateInfo(CompAllocator alloc, unsigned lclNum) : Replacements(alloc), LclNum(lclNum), Unpromoted(alloc)
     {
     }
 
@@ -209,13 +212,13 @@ public:
 // Class to represent liveness information for a struct local's fields and remainder.
 class StructDeaths
 {
-    BitVec   m_deaths;
-    unsigned m_numFields = 0;
+    BitVec         m_deaths;
+    AggregateInfo* m_aggregate = nullptr;
 
     friend class PromotionLiveness;
 
 private:
-    StructDeaths(BitVec deaths, unsigned numFields) : m_deaths(deaths), m_numFields(numFields)
+    StructDeaths(BitVec deaths, AggregateInfo* agg) : m_deaths(deaths), m_aggregate(agg)
     {
     }
 

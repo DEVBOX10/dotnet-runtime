@@ -200,7 +200,7 @@ namespace System.Text.Json
 
         internal ReadOnlyMemory<byte> GetRootRawValue()
         {
-            return GetRawValue(0, includeQuotes : true);
+            return GetRawValue(0, includeQuotes: true);
         }
 
         internal ReadOnlyMemory<byte> GetRawValue(int index, bool includeQuotes)
@@ -872,6 +872,15 @@ namespace System.Text.Json
                 rented.AsSpan().Clear();
                 ArrayPool<byte>.Shared.Return(rented.Array);
             }
+        }
+
+        internal void WritePropertyName(int index, Utf8JsonWriter writer)
+        {
+            CheckNotDisposed();
+
+            DbRow row = _parsedData.Get(index - DbRow.Size);
+            Debug.Assert(row.TokenType == JsonTokenType.PropertyName);
+            WritePropertyName(row, writer);
         }
 
         private void WritePropertyName(in DbRow row, Utf8JsonWriter writer)

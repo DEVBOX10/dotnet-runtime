@@ -22,10 +22,10 @@ namespace System.Numerics
           IBinaryInteger<BigInteger>,
           ISignedNumber<BigInteger>
     {
-        private const uint kuMaskHighBit = unchecked((uint)int.MinValue);
-        private const int kcbitUint = 32;
-        private const int kcbitUlong = 64;
-        private const int DecimalScaleFactorMask = 0x00FF0000;
+        internal const uint kuMaskHighBit = unchecked((uint)int.MinValue);
+        internal const int kcbitUint = 32;
+        internal const int kcbitUlong = 64;
+        internal const int DecimalScaleFactorMask = 0x00FF0000;
 
         // For values int.MinValue < n <= int.MaxValue, the value is stored in sign
         // and _bits is null. For all other values, sign is +1 or -1 and the bits are in _bits
@@ -1137,19 +1137,7 @@ namespace System.Numerics
             AssertValid();
             other.AssertValid();
 
-            if (_sign != other._sign)
-                return false;
-            if (_bits == other._bits)
-                // _sign == other._sign && _bits == null && other._bits == null
-                return true;
-
-            if (_bits == null || other._bits == null)
-                return false;
-            int cu = _bits.Length;
-            if (cu != other._bits.Length)
-                return false;
-            int cuDiff = GetDiffLength(_bits, other._bits, cu);
-            return cuDiff == 0;
+            return _sign == other._sign && _bits.AsSpan().SequenceEqual(other._bits);
         }
 
         public int CompareTo(long other)
@@ -1311,7 +1299,12 @@ namespace System.Numerics
         }
 
         /// <summary>Mode used to enable sharing <see cref="TryGetBytes(GetBytesMode, Span{byte}, bool, bool, ref int)"/> for multiple purposes.</summary>
-        private enum GetBytesMode { AllocateArray, Count, Span }
+        private enum GetBytesMode
+        {
+            AllocateArray,
+            Count,
+            Span
+        }
 
         /// <summary>Shared logic for <see cref="ToByteArray(bool, bool)"/>, <see cref="TryWriteBytes(Span{byte}, out int, bool, bool)"/>, and <see cref="GetByteCount"/>.</summary>
         /// <param name="mode">Which entry point is being used.</param>
@@ -1652,10 +1645,7 @@ namespace System.Numerics
             bool trivialLeft = leftBits.IsEmpty;
             bool trivialRight = rightBits.IsEmpty;
 
-            if (trivialLeft && trivialRight)
-            {
-                return (long)leftSign + rightSign;
-            }
+            Debug.Assert(!(trivialLeft && trivialRight), "Trivial cases should be handled on the caller operator");
 
             BigInteger result;
             uint[]? bitsFromPool = null;
@@ -1720,6 +1710,9 @@ namespace System.Numerics
             left.AssertValid();
             right.AssertValid();
 
+            if (left._bits == null && right._bits == null)
+                return (long)left._sign - right._sign;
+
             if (left._sign < 0 != right._sign < 0)
                 return Add(left._bits, left._sign, right._bits, -1 * right._sign);
             return Subtract(left._bits, left._sign, right._bits, right._sign);
@@ -1730,10 +1723,7 @@ namespace System.Numerics
             bool trivialLeft = leftBits.IsEmpty;
             bool trivialRight = rightBits.IsEmpty;
 
-            if (trivialLeft && trivialRight)
-            {
-                return (long)leftSign - rightSign;
-            }
+            Debug.Assert(!(trivialLeft && trivialRight), "Trivial cases should be handled on the caller operator");
 
             BigInteger result;
             uint[]? bitsFromPool = null;
@@ -2684,6 +2674,9 @@ namespace System.Numerics
             left.AssertValid();
             right.AssertValid();
 
+            if (left._bits == null && right._bits == null)
+                return (long)left._sign + right._sign;
+
             if (left._sign < 0 != right._sign < 0)
                 return Subtract(left._bits, left._sign, right._bits, -1 * right._sign);
             return Add(left._bits, left._sign, right._bits, right._sign);
@@ -2694,6 +2687,9 @@ namespace System.Numerics
             left.AssertValid();
             right.AssertValid();
 
+            if (left._bits == null && right._bits == null)
+                return (long)left._sign * right._sign;
+
             return Multiply(left._bits, left._sign, right._bits, right._sign);
         }
 
@@ -2702,10 +2698,7 @@ namespace System.Numerics
             bool trivialLeft = left.IsEmpty;
             bool trivialRight = right.IsEmpty;
 
-            if (trivialLeft && trivialRight)
-            {
-                return (long)leftSign * rightSign;
-            }
+            Debug.Assert(!(trivialLeft && trivialRight), "Trivial cases should be handled on the caller operator");
 
             BigInteger result;
             uint[]? bitsFromPool = null;
@@ -3150,8 +3143,8 @@ namespace System.Numerics
                 Debug.Assert(_bits.Length > 0);
                 // Wasted space: _bits[0] could have been packed into _sign
                 Debug.Assert(_bits.Length > 1 || _bits[0] >= kuMaskHighBit);
-                //// Wasted space: leading zeros could have been truncated // TODO: https://github.com/dotnet/runtime/issues/84991
-                //Debug.Assert(_bits[_bits.Length - 1] != 0);
+                // Wasted space: leading zeros could have been truncated
+                Debug.Assert(_bits[_bits.Length - 1] != 0);
                 // Arrays larger than this can't fit into a Span<byte>
                 Debug.Assert(_bits.Length <= MaxLength);
             }
@@ -4976,7 +4969,7 @@ namespace System.Numerics
 
                     if (value._bits.Length >= 3)
                     {
-                        upperBits = value._bits[2];
+                        upperBits |= value._bits[2];
                     }
 
                     if (value._bits.Length >= 2)
